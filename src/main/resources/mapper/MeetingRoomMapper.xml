@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.tencent.wxcloudrun.dao.MeetingRoomMapper">
+
+    <resultMap id="userMapper" type="com.tencent.wxcloudrun.model.User">
+        <id property="id" column="_id"/>
+        <result property="openId" column="openId"/>
+        <result property="name" column="name"/>
+        <result property="company" column="company"/>
+        <result property="phone" column="phone"/>
+        <result property="email" column="email"/>
+        <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
+        <result property="updatedAt" column="updatedAt" javaType="java.time.LocalDateTime"/>
+    </resultMap>
+
+    <resultMap id="inviteCodeMapper" type="com.tencent.wxcloudrun.model.InviteCode">
+        <id property="id" column="_id"/>
+        <result property="code" column="code"/>
+        <result property="enabled" column="enabled"/>
+        <result property="companyScope" column="companyScope"/>
+        <result property="usedBy" column="usedBy"/>
+        <result property="expiresAt" column="expiresAt" javaType="java.time.LocalDateTime"/>
+        <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
+    </resultMap>
+
+    <resultMap id="roomMapper" type="com.tencent.wxcloudrun.model.Room">
+        <id property="id" column="_id"/>
+        <result property="name" column="name"/>
+        <result property="enabled" column="enabled"/>
+        <result property="sortOrder" column="sortOrder"/>
+        <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
+        <result property="updatedAt" column="updatedAt" javaType="java.time.LocalDateTime"/>
+    </resultMap>
+
+    <resultMap id="bookingMapper" type="com.tencent.wxcloudrun.model.Booking">
+        <id property="id" column="_id"/>
+        <result property="roomId" column="roomId"/>
+        <result property="roomName" column="roomName"/>
+        <result property="date" column="date"/>
+        <result property="startTime" column="startTime"/>
+        <result property="endTime" column="endTime"/>
+        <result property="title" column="title"/>
+        <result property="organizerOpenId" column="organizerOpenId"/>
+        <result property="organizerUserId" column="organizerUserId"/>
+        <result property="organizerName" column="organizerName"/>
+        <result property="organizerCompany" column="organizerCompany"/>
+        <result property="attendees" column="attendees"/>
+        <result property="status" column="status"/>
+        <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
+        <result property="updatedAt" column="updatedAt" javaType="java.time.LocalDateTime"/>
+    </resultMap>
+
+    <select id="findUserByOpenId" resultMap="userMapper">
+        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        FROM `users`
+        WHERE `openId` = #{openId}
+        LIMIT 1
+    </select>
+
+    <select id="findUserById" resultMap="userMapper">
+        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        FROM `users`
+        WHERE `_id` = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="searchUsers" resultMap="userMapper">
+        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        FROM `users`
+        WHERE `name` LIKE CONCAT('%', #{keyword}, '%')
+        ORDER BY `name` ASC, `createdAt` ASC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertUser" parameterType="com.tencent.wxcloudrun.model.User">
+        INSERT INTO `users` (`_id`, `openId`, `name`, `company`, `phone`, `email`)
+        VALUES (#{id}, #{openId}, #{name}, #{company}, #{phone}, #{email})
+    </insert>
+
+    <update id="updateUser" parameterType="com.tencent.wxcloudrun.model.User">
+        UPDATE `users`
+        SET `name` = #{name},
+            `company` = #{company},
+            `phone` = #{phone},
+            `email` = #{email},
+            `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id}
+    </update>
+
+    <select id="findInviteByCode" resultMap="inviteCodeMapper">
+        SELECT `_id`, `code`, `enabled`, `companyScope`, `usedBy`, `expiresAt`, `createdAt`
+        FROM `invite_codes`
+        WHERE `code` = #{code}
+        LIMIT 1
+    </select>
+
+    <select id="findInviteById" resultMap="inviteCodeMapper">
+        SELECT `_id`, `code`, `enabled`, `companyScope`, `usedBy`, `expiresAt`, `createdAt`
+        FROM `invite_codes`
+        WHERE `_id` = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="updateInviteUsedBy">
+        UPDATE `invite_codes`
+        SET `usedBy` = #{usedBy}
+        WHERE `_id` = #{id}
+    </update>
+
+    <select id="findRoomById" resultMap="roomMapper">
+        SELECT `_id`, `name`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
+        FROM `rooms`
+        WHERE `_id` = #{id} AND `enabled` = 1
+        LIMIT 1
+    </select>
+
+    <select id="listEnabledRooms" resultMap="roomMapper">
+        SELECT `_id`, `name`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
+        FROM `rooms`
+        WHERE `enabled` = 1
+        ORDER BY `sortOrder` ASC, `_id` ASC
+    </select>
+
+    <select id="listBookingsByRoomAndDate" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `roomId` = #{roomId} AND `date` = #{date} AND `status` != 'cancelled'
+        ORDER BY `startTime` ASC
+    </select>
+
+    <select id="lockBookingsByRoomAndDate" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `roomId` = #{roomId} AND `date` = #{date} AND `status` != 'cancelled'
+        ORDER BY `startTime` ASC
+        FOR UPDATE
+    </select>
+
+    <select id="listBookingsByRoomAndDateRange" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `roomId` = #{roomId}
+          AND `date` &gt;= #{startDate}
+          AND `date` &lt;= #{endDate}
+          AND `status` != 'cancelled'
+        ORDER BY `date` ASC, `startTime` ASC
+    </select>
+
+    <select id="listActiveBookingsByDateTime" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `date` = #{date}
+          AND `status` = 'pending'
+          AND `startTime` &lt;= #{time}
+          AND `endTime` &gt; #{time}
+        ORDER BY `roomId` ASC
+    </select>
+
+    <select id="listMyBookings" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `organizerOpenId` = #{openId}
+          AND `status` = #{status}
+        ORDER BY `date` ASC, `startTime` ASC
+    </select>
+
+    <select id="findBookingById" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `_id` = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="insertBooking" parameterType="com.tencent.wxcloudrun.model.Booking">
+        INSERT INTO `bookings` (`_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+                                `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+                                `attendees`, `status`)
+        VALUES (#{id}, #{roomId}, #{roomName}, #{date}, #{startTime}, #{endTime}, #{title},
+                #{organizerOpenId}, #{organizerUserId}, #{organizerName}, #{organizerCompany},
+                #{attendees}, #{status})
+    </insert>
+
+    <update id="cancelBooking">
+        UPDATE `bookings`
+        SET `status` = 'cancelled', `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id}
+    </update>
+
+    <update id="updateBookingSchedule" parameterType="com.tencent.wxcloudrun.model.Booking">
+        UPDATE `bookings`
+        SET `roomId` = #{roomId},
+            `roomName` = #{roomName},
+            `date` = #{date},
+            `startTime` = #{startTime},
+            `endTime` = #{endTime},
+            `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id}
+    </update>
+
+    <select id="countPendingBookingsByOrganizer" resultType="int">
+        SELECT COUNT(1)
+        FROM `bookings`
+        WHERE `organizerOpenId` = #{openId} AND `status` = 'pending'
+    </select>
+
+</mapper>

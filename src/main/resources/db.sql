@@ -4,4 +4,84 @@ CREATE TABLE `Counters` (
   `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS `users` (
+  `_id` varchar(64) NOT NULL,
+  `openId` varchar(128) NOT NULL,
+  `name` varchar(30) NOT NULL,
+  `company` varchar(30) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `email` varchar(128) NOT NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`_id`),
+  UNIQUE KEY `uk_users_openId` (`openId`),
+  KEY `idx_users_name` (`name`),
+  KEY `idx_users_company` (`company`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `invite_codes` (
+  `_id` varchar(64) NOT NULL,
+  `code` varchar(6) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `companyScope` text,
+  `usedBy` text,
+  `expiresAt` timestamp NULL DEFAULT NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`_id`),
+  UNIQUE KEY `uk_invite_codes_code` (`code`),
+  KEY `idx_invite_codes_enabled` (`enabled`),
+  KEY `idx_invite_codes_expiresAt` (`expiresAt`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `rooms` (
+  `_id` varchar(64) NOT NULL,
+  `name` varchar(64) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 1,
+  `sortOrder` int(11) NOT NULL DEFAULT 0,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`_id`),
+  KEY `idx_rooms_enabled_sortOrder` (`enabled`, `sortOrder`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `bookings` (
+  `_id` varchar(64) NOT NULL,
+  `roomId` varchar(64) NOT NULL,
+  `roomName` varchar(64) NOT NULL,
+  `date` varchar(10) NOT NULL,
+  `startTime` varchar(5) NOT NULL,
+  `endTime` varchar(5) NOT NULL,
+  `title` varchar(100) NOT NULL,
+  `organizerOpenId` varchar(128) NOT NULL,
+  `organizerUserId` varchar(64) NOT NULL,
+  `organizerName` varchar(30) NOT NULL,
+  `organizerCompany` varchar(30) NOT NULL,
+  `attendees` text NOT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`_id`),
+  KEY `idx_bookings_room_date_status` (`roomId`, `date`, `status`),
+  KEY `idx_bookings_organizer_status` (`organizerOpenId`, `status`),
+  KEY `idx_bookings_date_startTime` (`date`, `startTime`),
+  KEY `idx_bookings_organizerUser_status` (`organizerUserId`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `invite_codes` (`_id`, `code`, `enabled`, `companyScope`, `usedBy`)
+VALUES ('inv_001', '123456', 1, '["万事网联","万事达卡"]', '[]')
+ON DUPLICATE KEY UPDATE
+  `enabled` = VALUES(`enabled`),
+  `companyScope` = VALUES(`companyScope`);
+
+INSERT INTO `rooms` (`_id`, `name`, `enabled`, `sortOrder`)
+VALUES
+  ('201', '启航 A', 1, 10),
+  ('202', '启航 B', 1, 20),
+  ('203', '协作 C', 1, 30),
+  ('204', '远航 D', 1, 40)
+ON DUPLICATE KEY UPDATE
+  `name` = VALUES(`name`),
+  `enabled` = VALUES(`enabled`),
+  `sortOrder` = VALUES(`sortOrder`);
