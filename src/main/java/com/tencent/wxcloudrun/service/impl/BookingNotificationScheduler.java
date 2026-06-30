@@ -70,8 +70,9 @@ public class BookingNotificationScheduler {
     }
 
     try {
-      LocalDateTime targetStart = LocalDateTime.now(ZoneId.of(notificationZoneId)).plusMinutes(14).withSecond(0).withNano(0);
-      LocalDateTime targetEnd = targetStart.plusMinutes(2);
+      LocalDateTime now = LocalDateTime.now(ZoneId.of(notificationZoneId)).withSecond(0).withNano(0);
+      LocalDateTime targetStart = now;
+      LocalDateTime targetEnd = now.plusMinutes(16);
       List<NotificationCandidate> candidates = meetingRoomMapper.listPendingNotificationCandidates(
           targetStart.format(DATE_FORMATTER),
           targetStart.format(TIME_FORMATTER),
@@ -91,12 +92,12 @@ public class BookingNotificationScheduler {
         }
         try {
           sendSubscribeMessage(candidate);
-          meetingRoomMapper.markSubscriptionSent(candidate.getSubscriptionId());
-          logger.info("notifications.send done subscriptionId={} bookingId={} openId={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()));
+          meetingRoomMapper.deleteBookingSubscription(candidate.getSubscriptionId());
+          logger.info("notifications.send done_deleted subscriptionId={} bookingId={} openId={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()));
         } catch (Exception ex) {
           String message = trimError(ex.getMessage());
-          meetingRoomMapper.markSubscriptionFailed(candidate.getSubscriptionId(), message);
-          logger.warn("notifications.send failed subscriptionId={} bookingId={} openId={} error={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()), message);
+          meetingRoomMapper.deleteBookingSubscription(candidate.getSubscriptionId());
+          logger.warn("notifications.send failed_deleted subscriptionId={} bookingId={} openId={} error={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()), message);
         }
       }
     } catch (Exception ex) {

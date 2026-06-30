@@ -68,7 +68,5 @@ public interface MeetingRoomMapper {
 
   int markSubscriptionSending(@Param("id") String id);
 
-  void markSubscriptionSent(@Param("id") String id);
-
-  void markSubscriptionFailed(@Param("id") String id, @Param("lastError") String lastError);
+  void deleteBookingSubscription(@Param("id") String id);
 }

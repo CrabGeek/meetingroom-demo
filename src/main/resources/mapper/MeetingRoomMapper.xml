@@ -262,7 +262,7 @@
         FROM `booking_subscriptions` s
         INNER JOIN `bookings` b ON b.`_id` = s.`bookingId`
         WHERE s.`subscribed` = 1
-          AND s.`notifyStatus` = 'pending'
+                    AND s.`notifyStatus` = 'pending'
           AND b.`status` = 'pending'
           AND CONCAT(b.`date`, ' ', b.`startTime`) &gt;= CONCAT(#{startDate}, ' ', #{startTime})
           AND CONCAT(b.`date`, ' ', b.`startTime`) &lt; CONCAT(#{endDate}, ' ', #{endTime})
@@ -276,19 +276,9 @@
         WHERE `_id` = #{id} AND `notifyStatus` = 'pending'
     </update>
 
-    <update id="markSubscriptionSent">
-        UPDATE `booking_subscriptions`
-        SET `notifyStatus` = 'sent', `sentAt` = CURRENT_TIMESTAMP, `lastError` = NULL, `updatedAt` = CURRENT_TIMESTAMP
+    <delete id="deleteBookingSubscription">
+        DELETE FROM `booking_subscriptions`
         WHERE `_id` = #{id}
-    </update>
-
-    <update id="markSubscriptionFailed">
-        UPDATE `booking_subscriptions`
-        SET `notifyStatus` = 'failed',
-            `lastError` = #{lastError},
-            `retryCount` = `retryCount` + 1,
-            `updatedAt` = CURRENT_TIMESTAMP
-        WHERE `_id` = #{id}
-    </update>
+    </delete>
 
 </mapper>
