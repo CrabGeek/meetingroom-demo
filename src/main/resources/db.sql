@@ -1,11 +1,3 @@
-CREATE TABLE `Counters` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `count` int(11) NOT NULL DEFAULT '1',
-  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
-
 CREATE TABLE IF NOT EXISTS `users` (
   `_id` varchar(64) NOT NULL,
   `openId` varchar(128) NOT NULL,
@@ -75,13 +67,26 @@ ON DUPLICATE KEY UPDATE
   `enabled` = VALUES(`enabled`),
   `companyScope` = VALUES(`companyScope`);
 
+DELETE FROM `rooms`
+WHERE `name` IN ('启航 A', '启航 B', '协作 C', '远航 D');
+
 INSERT INTO `rooms` (`_id`, `name`, `enabled`, `sortOrder`)
 VALUES
-  ('201', '启航 A', 1, 10),
-  ('202', '启航 B', 1, 20),
-  ('203', '协作 C', 1, 30),
-  ('204', '远航 D', 1, 40)
+  ('201', '19F-HangZhou Room', 1, 10),
+  ('202', '19F-GuangZhou Room', 1, 20),
+  ('203', '19F-TianJin Room', 1, 30),
+  ('204', '19F-Training Room', 1, 40)
 ON DUPLICATE KEY UPDATE
   `name` = VALUES(`name`),
   `enabled` = VALUES(`enabled`),
   `sortOrder` = VALUES(`sortOrder`);
+
+UPDATE `bookings`
+SET `roomName` = CASE `roomId`
+  WHEN '201' THEN '19F-HangZhou Room'
+  WHEN '202' THEN '19F-GuangZhou Room'
+  WHEN '203' THEN '19F-TianJin Room'
+  WHEN '204' THEN '19F-Training Room'
+  ELSE `roomName`
+END
+WHERE `roomId` IN ('201', '202', '203', '204');

@@ -17,6 +17,8 @@ import com.tencent.wxcloudrun.model.Room;
 import com.tencent.wxcloudrun.model.User;
 import com.tencent.wxcloudrun.service.ApiException;
 import com.tencent.wxcloudrun.service.MeetingRoomService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -42,6 +44,7 @@ import java.util.regex.Pattern;
 @Service
 public class MeetingRoomServiceImpl implements MeetingRoomService {
 
+  private static final Logger logger = LoggerFactory.getLogger(MeetingRoomServiceImpl.class);
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
   private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
   private static final Pattern INVITE_CODE_PATTERN = Pattern.compile("^\\d{6}$");
@@ -62,6 +65,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Value("${wx.app-secret:}")
   private String wxAppSecret;
 
+  @Value("${wx.dev-open-id:local_dev_openid}")
+  private String wxDevOpenId;
+
   public MeetingRoomServiceImpl(@Autowired MeetingRoomMapper meetingRoomMapper, @Autowired ObjectMapper objectMapper) {
     this.meetingRoomMapper = meetingRoomMapper;
     this.objectMapper = objectMapper;
@@ -70,10 +76,13 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   public Map<String, Object> checkUser(CheckUserRequest request) {
     if (request == null) {
+      logger.warn("auth.check-user rejected reason=missing_request");
       throw new ApiException(ApiErrorCode.UNAUTHORIZED, "缺少登录参数");
     }
+    logger.info("auth.check-user start hasOpenId={} hasCode={}", !isBlank(request.getOpenId()), !isBlank(request.getCode()));
     String openId = resolveOpenId(request);
     User user = meetingRoomMapper.findUserByOpenId(openId);
+    logger.info("auth.check-user done openId={} registered={} userId={}", maskOpenId(openId), user != null, user == null ? "-" : user.getId());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("registered", user != null);
@@ -85,16 +94,21 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   public Map<String, Object> verifyInvite(InviteVerifyRequest request) {
     if (request == null || isBlank(request.getOpenId()) || isBlank(request.getInviteCode())) {
+      logger.warn("invite.verify rejected reason=missing_param openId={}", request == null ? "-" : maskOpenId(request.getOpenId()));
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "openId 和 inviteCode 不能为空");
     }
+    logger.info("invite.verify start openId={} inviteCode={}", maskOpenId(request.getOpenId()), maskCode(request.getInviteCode()));
     if (!INVITE_CODE_PATTERN.matcher(request.getInviteCode()).matches()) {
+      logger.warn("invite.verify rejected reason=invalid_format openId={} inviteCode={}", maskOpenId(request.getOpenId()), maskCode(request.getInviteCode()));
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "邀请码必须为 6 位数字");
     }
 
     InviteCode inviteCode = meetingRoomMapper.findInviteByCode(request.getInviteCode());
     if (!isInviteUsable(inviteCode)) {
+      logger.warn("invite.verify rejected reason=invalid_or_expired openId={} inviteCode={}", maskOpenId(request.getOpenId()), maskCode(request.getInviteCode()));
       throw new ApiException(ApiErrorCode.INVALID_INVITE_CODE, "邀请码错误或已失效");
     }
+    logger.info("invite.verify done openId={} inviteId={} companyScopeSize={}", maskOpenId(request.getOpenId()), inviteCode.getId(), parseStringList(inviteCode.getCompanyScope()).size());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("valid", true);
@@ -107,14 +121,17 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Transactional
   public Map<String, Object> registerUser(RegisterRequest request) {
     validateRegisterRequest(request);
+    logger.info("users.register start openId={} company={} hasInviteId={}", maskOpenId(request.getOpenId()), request.getCompany(), !isBlank(request.getInviteId()));
     InviteCode inviteCode = null;
     if (!isBlank(request.getInviteId())) {
       inviteCode = meetingRoomMapper.findInviteById(request.getInviteId());
       if (!isInviteUsable(inviteCode)) {
+        logger.warn("users.register rejected reason=invalid_invite openId={} inviteId={}", maskOpenId(request.getOpenId()), request.getInviteId());
         throw new ApiException(ApiErrorCode.INVALID_INVITE_CODE, "邀请码错误或已失效");
       }
       List<String> companyScope = parseStringList(inviteCode.getCompanyScope());
       if (!companyScope.isEmpty() && !companyScope.contains(request.getCompany())) {
+        logger.warn("users.register rejected reason=company_out_of_scope openId={} inviteId={} company={}", maskOpenId(request.getOpenId()), request.getInviteId(), request.getCompany());
         throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "公司不在邀请码允许范围内");
       }
     }
@@ -129,12 +146,14 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       user.setPhone(request.getPhone().trim());
       user.setEmail(request.getEmail().trim());
       meetingRoomMapper.insertUser(user);
+      logger.info("users.register inserted openId={} userId={} company={}", maskOpenId(user.getOpenId()), user.getId(), user.getCompany());
     } else {
       user.setName(request.getName().trim());
       user.setCompany(request.getCompany());
       user.setPhone(request.getPhone().trim());
       user.setEmail(request.getEmail().trim());
       meetingRoomMapper.updateUser(user);
+      logger.info("users.register updated openId={} userId={} company={}", maskOpenId(user.getOpenId()), user.getId(), user.getCompany());
     }
 
     if (inviteCode != null) {
@@ -142,18 +161,23 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
 
     Map<String, Object> data = new LinkedHashMap<>();
-    data.put("user", userToMap(meetingRoomMapper.findUserByOpenId(request.getOpenId()), true));
+    User savedUser = meetingRoomMapper.findUserByOpenId(request.getOpenId());
+    logger.info("users.register done openId={} userId={}", maskOpenId(request.getOpenId()), savedUser == null ? "-" : savedUser.getId());
+    data.put("user", userToMap(savedUser, true));
     return data;
   }
 
   @Override
   public Map<String, Object> getProfile(String openId) {
+    logger.info("users.profile start openId={}", maskOpenId(openId));
     User user = requireUser(openId);
+    logger.info("users.profile done openId={} userId={}", maskOpenId(openId), user.getId());
     return userToMap(user, false);
   }
 
   @Override
   public Map<String, Object> getHomeSummary(String openId) {
+    logger.info("home.summary start openId={}", maskOpenId(openId));
     User user = requireUser(openId);
     Map<String, Object> profile = new LinkedHashMap<>();
     profile.put("name", user.getName());
@@ -161,18 +185,22 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("profile", profile);
-    data.put("pendingBookingCount", meetingRoomMapper.countPendingBookingsByOrganizer(openId));
+    int pendingBookingCount = meetingRoomMapper.countPendingBookingsByOrganizer(openId);
+    data.put("pendingBookingCount", pendingBookingCount);
+    logger.info("home.summary done openId={} userId={} pendingBookingCount={}", maskOpenId(openId), user.getId(), pendingBookingCount);
     return data;
   }
 
   @Override
   public Map<String, Object> listRooms(String date, String startTime, String endTime, Boolean onlyAvailable) {
+    logger.info("rooms.list start date={} startTime={} endTime={} onlyAvailable={}", date, startTime, endTime, onlyAvailable);
     boolean hasTimeQuery = !isBlank(date) || !isBlank(startTime) || !isBlank(endTime);
     LocalDate queryDate = null;
     LocalTime queryStart = null;
     LocalTime queryEnd = null;
     if (hasTimeQuery) {
       if (isBlank(date) || isBlank(startTime) || isBlank(endTime)) {
+        logger.warn("rooms.list rejected reason=incomplete_time_query date={} startTime={} endTime={}", date, startTime, endTime);
         throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "date/startTime/endTime 必须同时提供");
       }
       queryDate = parseDate(date);
@@ -198,11 +226,13 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("rooms", roomMaps);
+    logger.info("rooms.list done hasTimeQuery={} returnedRooms={}", hasTimeQuery, roomMaps.size());
     return data;
   }
 
   @Override
   public Map<String, Object> getRoomStatus(String date) {
+    logger.info("rooms.status start date={}", date);
     String statusDate = isBlank(date) ? LocalDate.now().format(DATE_FORMATTER) : parseDate(date).format(DATE_FORMATTER);
     String now = LocalTime.now().format(TIME_FORMATTER);
     Map<String, Booking> activeBookings = activeBookingMap(statusDate, now);
@@ -227,31 +257,38 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("summary", summary);
     data.put("rooms", rooms);
+    logger.info("rooms.status done date={} available={} busy={} returnedRooms={}", statusDate, availableCount, busyCount, rooms.size());
     return data;
   }
 
   @Override
   public Map<String, Object> getRoomCalendar(String roomId, String startDate, Integer days, String viewerOpenId) {
+    logger.info("rooms.calendar start roomId={} startDate={} days={} viewerOpenId={}", roomId, startDate, days, maskOpenId(viewerOpenId));
     if (isBlank(roomId) || isBlank(startDate) || isBlank(viewerOpenId)) {
+      logger.warn("rooms.calendar rejected reason=missing_param roomId={} startDate={} viewerOpenId={}", roomId, startDate, maskOpenId(viewerOpenId));
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "roomId/startDate/viewerOpenId 不能为空");
     }
     Room room = meetingRoomMapper.findRoomById(roomId);
     if (room == null) {
+      logger.warn("rooms.calendar rejected reason=room_not_found roomId={} viewerOpenId={}", roomId, maskOpenId(viewerOpenId));
       throw new ApiException(ApiErrorCode.ROOM_NOT_FOUND, "会议室不存在");
     }
     User viewer = requireUser(viewerOpenId);
     int dayCount = days == null ? 5 : days;
     if (dayCount < 1 || dayCount > 5) {
+      logger.warn("rooms.calendar rejected reason=invalid_days roomId={} days={}", roomId, dayCount);
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "days 当前仅支持 1 到 5 天");
     }
     LocalDate firstDate = parseDate(startDate);
     LocalDate today = LocalDate.now();
     if (firstDate.isAfter(today.plusDays(14))) {
+      logger.warn("rooms.calendar rejected reason=date_out_of_range roomId={} startDate={}", roomId, startDate);
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "日历最多查看当前日期起两周内数据");
     }
     LocalDate endDate = firstDate.plusDays(dayCount - 1L);
     List<Booking> bookings = meetingRoomMapper.listBookingsByRoomAndDateRange(roomId, firstDate.format(DATE_FORMATTER), endDate.format(DATE_FORMATTER));
     Map<String, List<Booking>> bookingsByDate = groupBookingsByDate(bookings);
+    int hiddenTitleCount = countHiddenTitles(bookings, viewer.getCompany());
 
     List<Map<String, Object>> daysData = new ArrayList<>();
     for (int index = 0; index < dayCount; index++) {
@@ -271,15 +308,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("room", roomData);
     data.put("days", daysData);
+    logger.info("rooms.calendar done roomId={} viewerOpenId={} days={} bookingCount={} hiddenTitleCount={}", roomId, maskOpenId(viewerOpenId), dayCount, bookings.size(), hiddenTitleCount);
     return data;
   }
 
   @Override
   public Map<String, Object> searchUsers(String keyword, String viewerOpenId, Integer limit) {
+    logger.info("users.search start viewerOpenId={} hasKeyword={} limit={}", maskOpenId(viewerOpenId), !isBlank(keyword), limit);
     requireUser(viewerOpenId);
     if (isBlank(keyword)) {
       Map<String, Object> data = new LinkedHashMap<>();
       data.put("users", new ArrayList<Map<String, Object>>());
+      logger.info("users.search done viewerOpenId={} returnedUsers=0 reason=blank_keyword", maskOpenId(viewerOpenId));
       return data;
     }
     int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));
@@ -295,6 +335,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("users", users);
+    logger.info("users.search done viewerOpenId={} returnedUsers={} limit={}", maskOpenId(viewerOpenId), users.size(), safeLimit);
     return data;
   }
 
@@ -302,9 +343,12 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Transactional(isolation = Isolation.SERIALIZABLE)
   public Map<String, Object> createBooking(CreateBookingRequest request) {
     validateCreateBookingRequest(request);
+    logger.info("bookings.create start organizerOpenId={} roomId={} date={} startTime={} endTime={} attendeeCount={}",
+        maskOpenId(request.getOrganizerOpenId()), request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime(), request.getAttendees().size());
     User organizer = requireUser(request.getOrganizerOpenId());
     Room room = meetingRoomMapper.findRoomById(request.getRoomId());
     if (room == null) {
+      logger.warn("bookings.create rejected reason=room_not_found organizerOpenId={} roomId={}", maskOpenId(request.getOrganizerOpenId()), request.getRoomId());
       throw new ApiException(ApiErrorCode.ROOM_NOT_FOUND, "会议室不存在");
     }
     LocalTime start = parseTime(request.getStartTime());
@@ -312,8 +356,11 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     validateTimeRange(start, end);
 
     List<Booking> lockedBookings = meetingRoomMapper.lockBookingsByRoomAndDate(request.getRoomId(), request.getDate());
+    logger.info("bookings.create conflict_check roomId={} date={} existingBookings={}", request.getRoomId(), request.getDate(), lockedBookings.size());
     Booking conflict = findConflict(lockedBookings, start, end, null);
     if (conflict != null) {
+      logger.warn("bookings.create rejected reason=booking_conflict organizerOpenId={} roomId={} date={} startTime={} endTime={} conflictBookingId={}",
+          maskOpenId(request.getOrganizerOpenId()), request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime(), conflict.getId());
       throw bookingConflict(conflict.getId());
     }
 
@@ -333,14 +380,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     booking.setAttendees(toJson(attendees));
     booking.setStatus(STATUS_PENDING);
     meetingRoomMapper.insertBooking(booking);
+    logger.info("bookings.create inserted bookingId={} organizerOpenId={} organizerUserId={} roomId={} date={} startTime={} endTime={} attendeeCount={}",
+      booking.getId(), maskOpenId(booking.getOrganizerOpenId()), booking.getOrganizerUserId(), booking.getRoomId(), booking.getDate(), booking.getStartTime(), booking.getEndTime(), attendees.size());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("booking", bookingToSummaryMap(meetingRoomMapper.findBookingById(booking.getId())));
+    logger.info("bookings.create done bookingId={}", booking.getId());
     return data;
   }
 
   @Override
   public Map<String, Object> getMyBookings(String openId, String status) {
+    logger.info("bookings.my start openId={} status={}", maskOpenId(openId), status);
     requireUser(openId);
     String queryStatus = isBlank(status) ? STATUS_PENDING : status;
     List<Map<String, Object>> bookings = new ArrayList<>();
@@ -349,24 +400,30 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("bookings", bookings);
+    logger.info("bookings.my done openId={} status={} returnedBookings={}", maskOpenId(openId), queryStatus, bookings.size());
     return data;
   }
 
   @Override
   @Transactional
   public Map<String, Object> cancelBooking(String bookingId, String openId) {
+    logger.info("bookings.cancel start bookingId={} openId={}", bookingId, maskOpenId(openId));
     requireUser(openId);
     Booking booking = meetingRoomMapper.findBookingById(bookingId);
     if (booking == null) {
+      logger.warn("bookings.cancel rejected reason=booking_not_found bookingId={} openId={}", bookingId, maskOpenId(openId));
       throw new ApiException(ApiErrorCode.BOOKING_NOT_FOUND, "预约记录不存在");
     }
     if (!openId.equals(booking.getOrganizerOpenId())) {
+      logger.warn("bookings.cancel rejected reason=permission_denied bookingId={} openId={} organizerOpenId={}", bookingId, maskOpenId(openId), maskOpenId(booking.getOrganizerOpenId()));
       throw new ApiException(ApiErrorCode.PERMISSION_DENIED, "无权限取消该预约");
     }
     if (!STATUS_PENDING.equals(booking.getStatus())) {
+      logger.warn("bookings.cancel rejected reason=invalid_status bookingId={} status={}", bookingId, booking.getStatus());
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "当前预约状态不允许取消");
     }
     meetingRoomMapper.cancelBooking(bookingId);
+    logger.info("bookings.cancel done bookingId={} openId={}", bookingId, maskOpenId(openId));
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("bookingId", bookingId);
@@ -377,23 +434,31 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   @Transactional(isolation = Isolation.SERIALIZABLE)
   public Map<String, Object> rescheduleBooking(String bookingId, RescheduleBookingRequest request) {
+    logger.info("bookings.reschedule start bookingId={} openId={} roomId={} date={} startTime={} endTime={}",
+        bookingId, request == null ? "-" : maskOpenId(request.getOpenId()), request == null ? null : request.getRoomId(),
+        request == null ? null : request.getDate(), request == null ? null : request.getStartTime(), request == null ? null : request.getEndTime());
     if (request == null || isBlank(request.getOpenId()) || isBlank(request.getRoomId()) || isBlank(request.getDate())
         || isBlank(request.getStartTime()) || isBlank(request.getEndTime())) {
+      logger.warn("bookings.reschedule rejected reason=missing_param bookingId={}", bookingId);
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "改期参数不完整");
     }
     requireUser(request.getOpenId());
     Booking booking = meetingRoomMapper.findBookingById(bookingId);
     if (booking == null) {
+      logger.warn("bookings.reschedule rejected reason=booking_not_found bookingId={} openId={}", bookingId, maskOpenId(request.getOpenId()));
       throw new ApiException(ApiErrorCode.BOOKING_NOT_FOUND, "预约记录不存在");
     }
     if (!request.getOpenId().equals(booking.getOrganizerOpenId())) {
+      logger.warn("bookings.reschedule rejected reason=permission_denied bookingId={} openId={} organizerOpenId={}", bookingId, maskOpenId(request.getOpenId()), maskOpenId(booking.getOrganizerOpenId()));
       throw new ApiException(ApiErrorCode.PERMISSION_DENIED, "无权限改期该预约");
     }
     if (!STATUS_PENDING.equals(booking.getStatus())) {
+      logger.warn("bookings.reschedule rejected reason=invalid_status bookingId={} status={}", bookingId, booking.getStatus());
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "当前预约状态不允许改期");
     }
     Room room = meetingRoomMapper.findRoomById(request.getRoomId());
     if (room == null) {
+      logger.warn("bookings.reschedule rejected reason=room_not_found bookingId={} roomId={}", bookingId, request.getRoomId());
       throw new ApiException(ApiErrorCode.ROOM_NOT_FOUND, "会议室不存在");
     }
     parseDate(request.getDate());
@@ -402,8 +467,11 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     validateTimeRange(start, end);
 
     List<Booking> lockedBookings = meetingRoomMapper.lockBookingsByRoomAndDate(request.getRoomId(), request.getDate());
+    logger.info("bookings.reschedule conflict_check bookingId={} roomId={} date={} existingBookings={}", bookingId, request.getRoomId(), request.getDate(), lockedBookings.size());
     Booking conflict = findConflict(lockedBookings, start, end, bookingId);
     if (conflict != null) {
+      logger.warn("bookings.reschedule rejected reason=booking_conflict bookingId={} conflictBookingId={} roomId={} date={} startTime={} endTime={}",
+          bookingId, conflict.getId(), request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime());
       throw bookingConflict(conflict.getId());
     }
 
@@ -413,6 +481,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     booking.setStartTime(request.getStartTime());
     booking.setEndTime(request.getEndTime());
     meetingRoomMapper.updateBookingSchedule(booking);
+    logger.info("bookings.reschedule done bookingId={} roomId={} date={} startTime={} endTime={}", bookingId, request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("booking", bookingToSummaryMap(meetingRoomMapper.findBookingById(bookingId)));
@@ -421,15 +490,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
   private String resolveOpenId(CheckUserRequest request) {
     if (!isBlank(request.getOpenId())) {
+      logger.info("auth.resolve-openid source=request_openId openId={}", maskOpenId(request.getOpenId()));
       return request.getOpenId().trim();
     }
     if (isBlank(request.getCode())) {
       throw new ApiException(ApiErrorCode.UNAUTHORIZED, "code 不能为空");
     }
     if (isBlank(wxAppId) || isBlank(wxAppSecret)) {
-      return request.getCode().trim();
+      logger.info("auth.resolve-openid source=dev_open_id wxConfigPresent=false devOpenId={}", maskOpenId(wxDevOpenId));
+      return wxDevOpenId.trim();
     }
     try {
+      logger.info("auth.resolve-openid source=wechat_api wxConfigPresent=true");
       String url = "https://api.weixin.qq.com/sns/jscode2session?appid=" + wxAppId
           + "&secret=" + wxAppSecret
           + "&js_code=" + request.getCode().trim()
@@ -437,12 +509,15 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       String body = new RestTemplate().getForObject(url, String.class);
       JsonNode json = objectMapper.readTree(body);
       if (json.hasNonNull("openid")) {
+        logger.info("auth.resolve-openid done source=wechat_api openId={}", maskOpenId(json.get("openid").asText()));
         return json.get("openid").asText();
       }
+      logger.warn("auth.resolve-openid rejected source=wechat_api response={}", json.toString());
       throw new ApiException(ApiErrorCode.UNAUTHORIZED, json.has("errmsg") ? json.get("errmsg").asText() : "微信登录失败");
     } catch (ApiException ex) {
       throw ex;
     } catch (Exception ex) {
+      logger.warn("auth.resolve-openid failed source=wechat_api message={}", ex.getMessage());
       throw new ApiException(ApiErrorCode.UNAUTHORIZED, "微信登录失败");
     }
   }
@@ -618,6 +693,16 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     return result;
   }
 
+  private int countHiddenTitles(List<Booking> bookings, String viewerCompany) {
+    int hiddenTitleCount = 0;
+    for (Booking booking : bookings) {
+      if (!viewerCompany.equals(booking.getOrganizerCompany())) {
+        hiddenTitleCount++;
+      }
+    }
+    return hiddenTitleCount;
+  }
+
   private Map<String, Object> userToMap(User user, boolean includeOpenId) {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("id", user.getId());
@@ -691,6 +776,28 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
   private String newId(String prefix) {
     return prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+  }
+
+  private String maskOpenId(String openId) {
+    if (isBlank(openId)) {
+      return "-";
+    }
+    String value = openId.trim();
+    if (value.length() <= 8) {
+      return value.charAt(0) + "***" + value.charAt(value.length() - 1);
+    }
+    return value.substring(0, 4) + "***" + value.substring(value.length() - 4);
+  }
+
+  private String maskCode(String code) {
+    if (isBlank(code)) {
+      return "-";
+    }
+    String value = code.trim();
+    if (value.length() <= 2) {
+      return "**";
+    }
+    return value.substring(0, 1) + "****" + value.substring(value.length() - 1);
   }
 
   private boolean isBlank(String value) {

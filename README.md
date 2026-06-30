@@ -3,7 +3,7 @@
 ![GitHub package.json dependency version (prod)](https://img.shields.io/badge/maven-3.6.0-green)
 ![GitHub package.json dependency version (prod)](https://img.shields.io/badge/jdk-11-green)
 
-微信云托管 Java Springboot 框架模版，实现简单的计数器读写接口，使用云托管 MySQL 读写、记录计数值。
+微信云托管 Java Spring Boot 后台服务，提供会议室预定小程序所需的用户注册、会议室查询、日历占用、预约创建、取消和改期接口。
 
 ![](https://qcloudimg.tencent-cloud.cn/raw/be22992d297d1b9a1a5365e606276781.png)
 
@@ -41,73 +41,21 @@
 
 ## 服务 API 文档
 
-### `GET /api/count`
+会议室预定接口以 `backend-api.md` 和 `backend-requirements.md` 为准，主要包括：
 
-获取当前计数
-
-#### 请求参数
-
-无
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
-```
-
-#### 调用示例
-
-```
-curl https://<云托管服务域名>/api/count
-```
-
-
-
-### `POST /api/count`
-
-更新计数，自增或者清零
-
-#### 请求参数
-
-- `action`：`string` 类型，枚举值
-  - 等于 `"inc"` 时，表示计数加一
-  - 等于 `"clear"` 时，表示计数重置（清零）
-
-##### 请求参数示例
-
-```
-{
-  "action": "inc"
-}
-```
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
-```
-
-#### 调用示例
-
-```
-curl -X POST -H 'content-type: application/json' -d '{"action": "inc"}' https://<云托管服务域名>/api/count
-```
+- `POST /auth/check-user`
+- `POST /invite/verify`
+- `POST /users/register`
+- `GET /users/profile`
+- `GET /home/summary`
+- `GET /rooms`
+- `GET /rooms/status`
+- `GET /rooms/{roomId}/calendar`
+- `GET /users/search`
+- `POST /bookings`
+- `GET /bookings/my`
+- `POST /bookings/{bookingId}/cancel`
+- `POST /bookings/{bookingId}/reschedule`
 
 ## 使用注意
 如果不是通过微信云托管控制台部署模板代码，而是自行复制/下载模板代码后，手动新建一个服务并部署，需要在「服务设置」中补全以下环境变量，才可正常使用，否则会引发无法连接数据库，进而导致部署失败。

@@ -17,6 +17,7 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(BookingConflictException.class)
   public ApiResponse handleBookingConflict(BookingConflictException ex) {
+    logger.warn("api.error code={} message={} conflictBookingId={}", ex.getCode(), ex.getMessage(), ex.getConflictBookingId());
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("conflictBookingId", ex.getConflictBookingId());
     return ApiResponse.fail(ex.getCode(), ex.getMessage(), data);
@@ -24,6 +25,7 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(ApiException.class)
   public ApiResponse handleApiException(ApiException ex) {
+    logger.warn("api.error code={} message={}", ex.getCode(), ex.getMessage());
     return ApiResponse.fail(ex.getCode(), ex.getMessage());
   }
 
