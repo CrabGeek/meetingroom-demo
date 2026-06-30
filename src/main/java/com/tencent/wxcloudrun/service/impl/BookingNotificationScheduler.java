@@ -69,34 +69,38 @@ public class BookingNotificationScheduler {
       return;
     }
 
-    LocalDateTime targetStart = LocalDateTime.now(ZoneId.of(notificationZoneId)).plusMinutes(14).withSecond(0).withNano(0);
-    LocalDateTime targetEnd = targetStart.plusMinutes(2);
-    List<NotificationCandidate> candidates = meetingRoomMapper.listPendingNotificationCandidates(
-        targetStart.format(DATE_FORMATTER),
-        targetStart.format(TIME_FORMATTER),
-        targetEnd.format(DATE_FORMATTER),
-        targetEnd.format(TIME_FORMATTER),
-        scanLimit == null ? 50 : scanLimit);
+    try {
+      LocalDateTime targetStart = LocalDateTime.now(ZoneId.of(notificationZoneId)).plusMinutes(14).withSecond(0).withNano(0);
+      LocalDateTime targetEnd = targetStart.plusMinutes(2);
+      List<NotificationCandidate> candidates = meetingRoomMapper.listPendingNotificationCandidates(
+          targetStart.format(DATE_FORMATTER),
+          targetStart.format(TIME_FORMATTER),
+          targetEnd.format(DATE_FORMATTER),
+          targetEnd.format(TIME_FORMATTER),
+          scanLimit == null ? 50 : scanLimit);
 
-    if (candidates.isEmpty()) {
-      logger.info("notifications.scan done candidates=0 targetStart={} targetEnd={}", targetStart, targetEnd);
-      return;
-    }
+      if (candidates.isEmpty()) {
+        logger.info("notifications.scan done candidates=0 targetStart={} targetEnd={}", targetStart, targetEnd);
+        return;
+      }
 
-    logger.info("notifications.scan start candidates={} targetStart={} targetEnd={}", candidates.size(), targetStart, targetEnd);
-    for (NotificationCandidate candidate : candidates) {
-      if (meetingRoomMapper.markSubscriptionSending(candidate.getSubscriptionId()) != 1) {
-        continue;
+      logger.info("notifications.scan start candidates={} targetStart={} targetEnd={}", candidates.size(), targetStart, targetEnd);
+      for (NotificationCandidate candidate : candidates) {
+        if (meetingRoomMapper.markSubscriptionSending(candidate.getSubscriptionId()) != 1) {
+          continue;
+        }
+        try {
+          sendSubscribeMessage(candidate);
+          meetingRoomMapper.markSubscriptionSent(candidate.getSubscriptionId());
+          logger.info("notifications.send done subscriptionId={} bookingId={} openId={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()));
+        } catch (Exception ex) {
+          String message = trimError(ex.getMessage());
+          meetingRoomMapper.markSubscriptionFailed(candidate.getSubscriptionId(), message);
+          logger.warn("notifications.send failed subscriptionId={} bookingId={} openId={} error={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()), message);
+        }
       }
-      try {
-        sendSubscribeMessage(candidate);
-        meetingRoomMapper.markSubscriptionSent(candidate.getSubscriptionId());
-        logger.info("notifications.send done subscriptionId={} bookingId={} openId={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()));
-      } catch (Exception ex) {
-        String message = trimError(ex.getMessage());
-        meetingRoomMapper.markSubscriptionFailed(candidate.getSubscriptionId(), message);
-        logger.warn("notifications.send failed subscriptionId={} bookingId={} openId={} error={}", candidate.getSubscriptionId(), candidate.getBookingId(), maskOpenId(candidate.getOpenId()), message);
-      }
+    } catch (Exception ex) {
+      logger.warn("notifications.scan skipped reason=database_or_mapper_error error={}", trimError(ex.getMessage()));
     }
   }
 
