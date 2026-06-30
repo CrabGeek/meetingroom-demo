@@ -31,6 +31,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -70,6 +71,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
   @Value("${wx.dev-open-id:local_dev_openid}")
   private String wxDevOpenId;
+
+  @Value("${notification.zone-id:Asia/Shanghai}")
+  private String zoneId;
 
   public MeetingRoomServiceImpl(@Autowired MeetingRoomMapper meetingRoomMapper, @Autowired ObjectMapper objectMapper) {
     this.meetingRoomMapper = meetingRoomMapper;
@@ -212,8 +216,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       validateTimeRange(queryStart, queryEnd);
     }
 
-    LocalDate today = LocalDate.now();
-    LocalTime now = LocalTime.now();
+    ZoneId currentZone = currentZoneId();
+    LocalDate today = LocalDate.now(currentZone);
+    LocalTime now = LocalTime.now(currentZone);
     Map<String, Booking> activeBookings = activeBookingMap(today.format(DATE_FORMATTER), now.format(TIME_FORMATTER));
     List<Map<String, Object>> roomMaps = new ArrayList<>();
     for (Room room : meetingRoomMapper.listEnabledRooms()) {
@@ -236,8 +241,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   public Map<String, Object> getRoomStatus(String date) {
     logger.info("rooms.status start date={}", date);
-    String statusDate = isBlank(date) ? LocalDate.now().format(DATE_FORMATTER) : parseDate(date).format(DATE_FORMATTER);
-    String now = LocalTime.now().format(TIME_FORMATTER);
+    ZoneId currentZone = currentZoneId();
+    String statusDate = isBlank(date) ? LocalDate.now(currentZone).format(DATE_FORMATTER) : parseDate(date).format(DATE_FORMATTER);
+    String now = LocalTime.now(currentZone).format(TIME_FORMATTER);
     Map<String, Booking> activeBookings = activeBookingMap(statusDate, now);
 
     int availableCount = 0;
@@ -283,7 +289,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "days 当前仅支持 1 到 5 天");
     }
     LocalDate firstDate = parseDate(startDate);
-    LocalDate today = LocalDate.now();
+    LocalDate today = LocalDate.now(currentZoneId());
     if (firstDate.isAfter(today.plusDays(14))) {
       logger.warn("rooms.calendar rejected reason=date_out_of_range roomId={} startDate={}", roomId, startDate);
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "日历最多查看当前日期起两周内数据");
@@ -886,6 +892,10 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
   private String newId(String prefix) {
     return prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+  }
+
+  private ZoneId currentZoneId() {
+    return ZoneId.of(isBlank(zoneId) ? "Asia/Shanghai" : zoneId);
   }
 
   private String maskOpenId(String openId) {
