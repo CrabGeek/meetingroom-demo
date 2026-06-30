@@ -11,7 +11,9 @@ import com.tencent.wxcloudrun.dto.CreateBookingRequest;
 import com.tencent.wxcloudrun.dto.InviteVerifyRequest;
 import com.tencent.wxcloudrun.dto.RegisterRequest;
 import com.tencent.wxcloudrun.dto.RescheduleBookingRequest;
+import com.tencent.wxcloudrun.dto.SubscribeBookingRequest;
 import com.tencent.wxcloudrun.model.Booking;
+import com.tencent.wxcloudrun.model.BookingSubscription;
 import com.tencent.wxcloudrun.model.InviteCode;
 import com.tencent.wxcloudrun.model.Room;
 import com.tencent.wxcloudrun.model.User;
@@ -54,6 +56,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   private static final String COMPANY_B = "万事达卡";
   private static final String STATUS_PENDING = "pending";
   private static final String STATUS_CANCELLED = "cancelled";
+  private static final String NOTIFY_STATUS_PENDING = "pending";
   private static final String DISPLAY_OCCUPIED = "已占用";
 
   private final MeetingRoomMapper meetingRoomMapper;
@@ -390,17 +393,29 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   }
 
   @Override
-  public Map<String, Object> getMyBookings(String openId, String status) {
-    logger.info("bookings.my start openId={} status={}", maskOpenId(openId), status);
-    requireUser(openId);
+  public Map<String, Object> getMyBookings(String openId, String status, Boolean includeAttendee) {
+    logger.info("bookings.my start openId={} status={} includeAttendee={}", maskOpenId(openId), status, includeAttendee);
+    User currentUser = requireUser(openId);
     String queryStatus = isBlank(status) ? STATUS_PENDING : status;
     List<Map<String, Object>> bookings = new ArrayList<>();
+    Set<String> bookingIds = new HashSet<>();
     for (Booking booking : meetingRoomMapper.listMyBookings(openId, queryStatus)) {
-      bookings.add(bookingToListMap(booking));
+      bookings.add(bookingToListMap(booking, "organizer", true));
+      bookingIds.add(booking.getId());
     }
+    if (Boolean.TRUE.equals(includeAttendee)) {
+      for (Booking booking : meetingRoomMapper.listAttendeeBookings(currentUser.getId(), queryStatus)) {
+        if (bookingIds.contains(booking.getId()) || !isAttendee(booking, currentUser.getId())) {
+          continue;
+        }
+        bookings.add(bookingToListMap(booking, "attendee", false));
+        bookingIds.add(booking.getId());
+      }
+    }
+    sortBookingMaps(bookings);
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("bookings", bookings);
-    logger.info("bookings.my done openId={} status={} returnedBookings={}", maskOpenId(openId), queryStatus, bookings.size());
+    logger.info("bookings.my done openId={} status={} includeAttendee={} returnedBookings={}", maskOpenId(openId), queryStatus, includeAttendee, bookings.size());
     return data;
   }
 
@@ -485,6 +500,43 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("booking", bookingToSummaryMap(meetingRoomMapper.findBookingById(bookingId)));
+    return data;
+  }
+
+  @Override
+  @Transactional
+  public Map<String, Object> subscribeBooking(String bookingId, SubscribeBookingRequest request) {
+    if (request == null || isBlank(request.getOpenId()) || isBlank(request.getTemplateId())) {
+      logger.warn("bookings.subscribe rejected reason=missing_param bookingId={} openId={}", bookingId, request == null ? "-" : maskOpenId(request.getOpenId()));
+      throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "订阅参数不完整");
+    }
+    logger.info("bookings.subscribe start bookingId={} openId={} templateId={}", bookingId, maskOpenId(request.getOpenId()), maskTemplateId(request.getTemplateId()));
+    requireUser(request.getOpenId());
+    Booking booking = meetingRoomMapper.findBookingById(bookingId);
+    if (booking == null) {
+      logger.warn("bookings.subscribe rejected reason=booking_not_found bookingId={} openId={}", bookingId, maskOpenId(request.getOpenId()));
+      throw new ApiException(ApiErrorCode.BOOKING_NOT_FOUND, "预约记录不存在");
+    }
+    if (!canReceiveBookingNotification(booking, request.getOpenId())) {
+      logger.warn("bookings.subscribe rejected reason=permission_denied bookingId={} openId={} organizerOpenId={}", bookingId, maskOpenId(request.getOpenId()), maskOpenId(booking.getOrganizerOpenId()));
+      throw new ApiException(ApiErrorCode.PERMISSION_DENIED, "无权限订阅该预约通知");
+    }
+
+    BookingSubscription subscription = new BookingSubscription();
+    subscription.setId(newId("sub"));
+    subscription.setBookingId(bookingId);
+    subscription.setOpenId(request.getOpenId().trim());
+    subscription.setTemplateId(request.getTemplateId().trim());
+    subscription.setSubscribed(true);
+    subscription.setNotifyStatus(NOTIFY_STATUS_PENDING);
+    subscription.setRetryCount(0);
+    meetingRoomMapper.upsertBookingSubscription(subscription);
+
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("bookingId", bookingId);
+    data.put("templateId", request.getTemplateId().trim());
+    data.put("subscribed", true);
+    logger.info("bookings.subscribe done bookingId={} openId={} templateId={}", bookingId, maskOpenId(request.getOpenId()), maskTemplateId(request.getTemplateId()));
     return data;
   }
 
@@ -654,6 +706,46 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     return attendees;
   }
 
+  private boolean canReceiveBookingNotification(Booking booking, String openId) {
+    if (openId.equals(booking.getOrganizerOpenId())) {
+      return true;
+    }
+    User user = meetingRoomMapper.findUserByOpenId(openId);
+    if (user == null || isBlank(booking.getAttendees())) {
+      return false;
+    }
+    try {
+      List<Map<String, Object>> attendees = objectMapper.readValue(booking.getAttendees(), new TypeReference<List<Map<String, Object>>>() {});
+      for (Map<String, Object> attendee : attendees) {
+        Object userId = attendee.get("userId");
+        if (userId != null && user.getId().equals(String.valueOf(userId))) {
+          return true;
+        }
+      }
+    } catch (Exception ex) {
+      logger.warn("bookings.subscribe attendee_parse_failed bookingId={} message={}", booking.getId(), ex.getMessage());
+    }
+    return false;
+  }
+
+  private boolean isAttendee(Booking booking, String userId) {
+    if (isBlank(booking.getAttendees())) {
+      return false;
+    }
+    try {
+      List<Map<String, Object>> attendees = objectMapper.readValue(booking.getAttendees(), new TypeReference<List<Map<String, Object>>>() {});
+      for (Map<String, Object> attendee : attendees) {
+        Object attendeeUserId = attendee.get("userId");
+        if (attendeeUserId != null && userId.equals(String.valueOf(attendeeUserId))) {
+          return true;
+        }
+      }
+    } catch (Exception ex) {
+      logger.warn("bookings.my attendee_parse_failed bookingId={} message={}", booking.getId(), ex.getMessage());
+    }
+    return false;
+  }
+
   private Map<String, Object> attendeeMap(User user) {
     Map<String, Object> attendee = new LinkedHashMap<>();
     attendee.put("userId", user.getId());
@@ -726,6 +818,10 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   }
 
   private Map<String, Object> bookingToListMap(Booking booking) {
+    return bookingToListMap(booking, null, null);
+  }
+
+  private Map<String, Object> bookingToListMap(Booking booking, String userRole, Boolean canManage) {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("id", booking.getId());
     data.put("title", booking.getTitle());
@@ -735,7 +831,21 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     data.put("startTime", booking.getStartTime());
     data.put("endTime", booking.getEndTime());
     data.put("status", booking.getStatus());
+    if (userRole != null) {
+      data.put("userRole", userRole);
+    }
+    if (canManage != null) {
+      data.put("canManage", canManage);
+    }
     return data;
+  }
+
+  private void sortBookingMaps(List<Map<String, Object>> bookings) {
+    bookings.sort((left, right) -> {
+      String leftValue = String.valueOf(left.get("date")) + " " + String.valueOf(left.get("startTime"));
+      String rightValue = String.valueOf(right.get("date")) + " " + String.valueOf(right.get("startTime"));
+      return leftValue.compareTo(rightValue);
+    });
   }
 
   private ApiException bookingConflict(String conflictBookingId) {
@@ -798,6 +908,17 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       return "**";
     }
     return value.substring(0, 1) + "****" + value.substring(value.length() - 1);
+  }
+
+  private String maskTemplateId(String templateId) {
+    if (isBlank(templateId)) {
+      return "-";
+    }
+    String value = templateId.trim();
+    if (value.length() <= 12) {
+      return value.charAt(0) + "***" + value.charAt(value.length() - 1);
+    }
+    return value.substring(0, 6) + "***" + value.substring(value.length() - 6);
   }
 
   private boolean isBlank(String value) {

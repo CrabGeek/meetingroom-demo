@@ -61,6 +61,24 @@ CREATE TABLE IF NOT EXISTS `bookings` (
   KEY `idx_bookings_organizerUser_status` (`organizerUserId`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `booking_subscriptions` (
+  `_id` varchar(64) NOT NULL,
+  `bookingId` varchar(64) NOT NULL,
+  `openId` varchar(128) NOT NULL,
+  `templateId` varchar(128) NOT NULL,
+  `subscribed` tinyint(1) NOT NULL DEFAULT 1,
+  `notifyStatus` varchar(20) NOT NULL DEFAULT 'pending',
+  `sentAt` timestamp NULL DEFAULT NULL,
+  `lastError` varchar(512) DEFAULT NULL,
+  `retryCount` int(11) NOT NULL DEFAULT 0,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`_id`),
+  UNIQUE KEY `uk_booking_subscriptions_booking_openid_template` (`bookingId`, `openId`, `templateId`),
+  KEY `idx_booking_subscriptions_status` (`notifyStatus`, `subscribed`, `createdAt`),
+  KEY `idx_booking_subscriptions_openId` (`openId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO `invite_codes` (`_id`, `code`, `enabled`, `companyScope`, `usedBy`)
 VALUES ('inv_001', '123456', 1, '["万事网联","万事达卡"]', '[]')
 ON DUPLICATE KEY UPDATE

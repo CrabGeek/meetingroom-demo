@@ -5,6 +5,7 @@ import com.tencent.wxcloudrun.dto.CreateBookingRequest;
 import com.tencent.wxcloudrun.dto.InviteVerifyRequest;
 import com.tencent.wxcloudrun.dto.RegisterRequest;
 import com.tencent.wxcloudrun.dto.RescheduleBookingRequest;
+import com.tencent.wxcloudrun.dto.SubscribeBookingRequest;
 
 import java.util.Map;
 
@@ -30,9 +31,11 @@ public interface MeetingRoomService {
 
   Map<String, Object> createBooking(CreateBookingRequest request);
 
-  Map<String, Object> getMyBookings(String openId, String status);
+  Map<String, Object> getMyBookings(String openId, String status, Boolean includeAttendee);
 
   Map<String, Object> cancelBooking(String bookingId, String openId);
 
   Map<String, Object> rescheduleBooking(String bookingId, RescheduleBookingRequest request);
+
+  Map<String, Object> subscribeBooking(String bookingId, SubscribeBookingRequest request);
 }

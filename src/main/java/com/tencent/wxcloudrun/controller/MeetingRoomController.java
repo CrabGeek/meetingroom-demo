@@ -6,6 +6,7 @@ import com.tencent.wxcloudrun.dto.CreateBookingRequest;
 import com.tencent.wxcloudrun.dto.InviteVerifyRequest;
 import com.tencent.wxcloudrun.dto.RegisterRequest;
 import com.tencent.wxcloudrun.dto.RescheduleBookingRequest;
+import com.tencent.wxcloudrun.dto.SubscribeBookingRequest;
 import com.tencent.wxcloudrun.service.MeetingRoomService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -86,8 +87,9 @@ public class MeetingRoomController {
 
   @GetMapping("/bookings/my")
   public ApiResponse getMyBookings(@RequestParam("openId") String openId,
-                                   @RequestParam(value = "status", required = false) String status) {
-    return ApiResponse.ok(meetingRoomService.getMyBookings(openId, status));
+                                   @RequestParam(value = "status", required = false) String status,
+                                   @RequestParam(value = "includeAttendee", required = false) Boolean includeAttendee) {
+    return ApiResponse.ok(meetingRoomService.getMyBookings(openId, status, includeAttendee));
   }
 
   @PostMapping("/bookings/{bookingId}/cancel")
@@ -99,5 +101,11 @@ public class MeetingRoomController {
   public ApiResponse rescheduleBooking(@PathVariable("bookingId") String bookingId,
                                        @RequestBody RescheduleBookingRequest request) {
     return ApiResponse.ok(meetingRoomService.rescheduleBooking(bookingId, request));
+  }
+
+  @PostMapping("/bookings/{bookingId}/subscribe")
+  public ApiResponse subscribeBooking(@PathVariable("bookingId") String bookingId,
+                                      @RequestBody SubscribeBookingRequest request) {
+    return ApiResponse.ok(meetingRoomService.subscribeBooking(bookingId, request));
   }
 }

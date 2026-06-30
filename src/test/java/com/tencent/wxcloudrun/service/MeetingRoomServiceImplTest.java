@@ -6,7 +6,9 @@ import com.tencent.wxcloudrun.dao.MeetingRoomMapper;
 import com.tencent.wxcloudrun.dto.AttendeeRequest;
 import com.tencent.wxcloudrun.dto.CheckUserRequest;
 import com.tencent.wxcloudrun.dto.CreateBookingRequest;
+import com.tencent.wxcloudrun.dto.SubscribeBookingRequest;
 import com.tencent.wxcloudrun.model.Booking;
+import com.tencent.wxcloudrun.model.BookingSubscription;
 import com.tencent.wxcloudrun.model.Room;
 import com.tencent.wxcloudrun.model.User;
 import com.tencent.wxcloudrun.service.impl.MeetingRoomServiceImpl;
@@ -23,7 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MeetingRoomServiceImplTest {
@@ -80,6 +84,53 @@ class MeetingRoomServiceImplTest {
 
     ApiException exception = assertThrows(ApiException.class, () -> service.createBooking(request));
     assertEquals(ApiErrorCode.BOOKING_CONFLICT, exception.getCode());
+  }
+
+  @Test
+  void subscribeBookingStoresOrganizerSubscription() {
+    User organizer = user("u_001", "openid_001", "张明", "万事网联");
+    Booking booking = booking("b_001", "201", "2026-07-01", "10:00", "11:00", "需求梳理", "万事网联");
+    booking.setOrganizerOpenId("openid_001");
+
+    when(mapper.findUserByOpenId("openid_001")).thenReturn(organizer);
+    when(mapper.findBookingById("b_001")).thenReturn(booking);
+
+    SubscribeBookingRequest request = new SubscribeBookingRequest();
+    request.setOpenId("openid_001");
+    request.setTemplateId("DnGf1LKDdeVoIOcD9U16RCQzWBqKnUH_Rll13_cFaLk");
+
+    Map<String, Object> data = service.subscribeBooking("b_001", request);
+
+    assertEquals("b_001", data.get("bookingId"));
+    assertEquals(true, data.get("subscribed"));
+    verify(mapper).upsertBookingSubscription(any(BookingSubscription.class));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void getMyBookingsIncludesOrganizerAndAttendeeRoles() {
+    User currentUser = user("u_001", "openid_001", "张明", "万事网联");
+    Booking organizerBooking = booking("b_001", "201", "2026-07-01", "10:00", "11:00", "产品评审会", "万事网联");
+    organizerBooking.setOrganizerOpenId("openid_001");
+    organizerBooking.setAttendees("[{\"userId\":\"u_001\",\"name\":\"张明\",\"company\":\"万事网联\"}]");
+    Booking attendeeBooking = booking("b_002", "202", "2026-07-01", "14:00", "15:00", "客户沟通", "万事达卡");
+    attendeeBooking.setOrganizerOpenId("openid_002");
+    attendeeBooking.setAttendees("[{\"userId\":\"u_001\",\"name\":\"张明\",\"company\":\"万事网联\"}]");
+
+    when(mapper.findUserByOpenId("openid_001")).thenReturn(currentUser);
+    when(mapper.listMyBookings("openid_001", "pending")).thenReturn(Arrays.asList(organizerBooking));
+    when(mapper.listAttendeeBookings("u_001", "pending")).thenReturn(Arrays.asList(organizerBooking, attendeeBooking));
+
+    Map<String, Object> data = service.getMyBookings("openid_001", "pending", true);
+    List<Map<String, Object>> bookings = (List<Map<String, Object>>) data.get("bookings");
+
+    assertEquals(2, bookings.size());
+    assertEquals("b_001", bookings.get(0).get("id"));
+    assertEquals("organizer", bookings.get(0).get("userRole"));
+    assertEquals(true, bookings.get(0).get("canManage"));
+    assertEquals("b_002", bookings.get(1).get("id"));
+    assertEquals("attendee", bookings.get(1).get("userRole"));
+    assertEquals(false, bookings.get(1).get("canManage"));
   }
 
   @Test

@@ -24,3 +24,9 @@ wx:
   app-id: ${WX_APP_ID:}
   app-secret: ${WX_APP_SECRET:}
   dev-open-id: ${WX_DEV_OPEN_ID:local_dev_openid}
+
+notification:
+  enabled: ${NOTIFICATION_ENABLED:true}
+  zone-id: ${NOTIFICATION_ZONE_ID:Asia/Shanghai}
+  scan-limit: ${NOTIFICATION_SCAN_LIMIT:50}
+  page: ${NOTIFICATION_PAGE:pages/my-bookings/index}

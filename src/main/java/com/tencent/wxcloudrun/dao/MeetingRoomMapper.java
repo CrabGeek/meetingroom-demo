@@ -1,7 +1,9 @@
 package com.tencent.wxcloudrun.dao;
 
 import com.tencent.wxcloudrun.model.Booking;
+import com.tencent.wxcloudrun.model.BookingSubscription;
 import com.tencent.wxcloudrun.model.InviteCode;
+import com.tencent.wxcloudrun.model.NotificationCandidate;
 import com.tencent.wxcloudrun.model.Room;
 import com.tencent.wxcloudrun.model.User;
 import org.apache.ibatis.annotations.Mapper;
@@ -44,6 +46,8 @@ public interface MeetingRoomMapper {
 
   List<Booking> listMyBookings(@Param("openId") String openId, @Param("status") String status);
 
+  List<Booking> listAttendeeBookings(@Param("userId") String userId, @Param("status") String status);
+
   Booking findBookingById(@Param("id") String id);
 
   void insertBooking(Booking booking);
@@ -53,4 +57,18 @@ public interface MeetingRoomMapper {
   void updateBookingSchedule(Booking booking);
 
   int countPendingBookingsByOrganizer(@Param("openId") String openId);
+
+  void upsertBookingSubscription(BookingSubscription subscription);
+
+  List<NotificationCandidate> listPendingNotificationCandidates(@Param("startDate") String startDate,
+                                                                 @Param("startTime") String startTime,
+                                                                 @Param("endDate") String endDate,
+                                                                 @Param("endTime") String endTime,
+                                                                 @Param("limit") Integer limit);
+
+  int markSubscriptionSending(@Param("id") String id);
+
+  void markSubscriptionSent(@Param("id") String id);
+
+  void markSubscriptionFailed(@Param("id") String id, @Param("lastError") String lastError);
 }

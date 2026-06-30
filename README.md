@@ -53,6 +53,7 @@
 - `GET /rooms/{roomId}/calendar`
 - `GET /users/search`
 - `POST /bookings`
+- `POST /bookings/{bookingId}/subscribe`
 - `GET /bookings/my`
 - `POST /bookings/{bookingId}/cancel`
 - `POST /bookings/{bookingId}/reschedule`

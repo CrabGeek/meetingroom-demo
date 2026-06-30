@@ -50,6 +50,19 @@
         <result property="updatedAt" column="updatedAt" javaType="java.time.LocalDateTime"/>
     </resultMap>
 
+    <resultMap id="notificationCandidateMapper" type="com.tencent.wxcloudrun.model.NotificationCandidate">
+        <id property="subscriptionId" column="subscriptionId"/>
+        <result property="bookingId" column="bookingId"/>
+        <result property="openId" column="openId"/>
+        <result property="templateId" column="templateId"/>
+        <result property="roomName" column="roomName"/>
+        <result property="date" column="date"/>
+        <result property="startTime" column="startTime"/>
+        <result property="endTime" column="endTime"/>
+        <result property="title" column="title"/>
+        <result property="organizerName" column="organizerName"/>
+    </resultMap>
+
     <select id="findUserByOpenId" resultMap="userMapper">
         SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
         FROM `users`
@@ -174,6 +187,16 @@
         ORDER BY `date` ASC, `startTime` ASC
     </select>
 
+    <select id="listAttendeeBookings" resultMap="bookingMapper">
+        SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
+               `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
+               `attendees`, `status`, `createdAt`, `updatedAt`
+        FROM `bookings`
+        WHERE `attendees` LIKE CONCAT('%', #{userId}, '%')
+          AND `status` = #{status}
+        ORDER BY `date` ASC, `startTime` ASC
+    </select>
+
     <select id="findBookingById" resultMap="bookingMapper">
         SELECT `_id`, `roomId`, `roomName`, `date`, `startTime`, `endTime`, `title`,
                `organizerOpenId`, `organizerUserId`, `organizerName`, `organizerCompany`,
@@ -214,5 +237,58 @@
         FROM `bookings`
         WHERE `organizerOpenId` = #{openId} AND `status` = 'pending'
     </select>
+
+    <insert id="upsertBookingSubscription" parameterType="com.tencent.wxcloudrun.model.BookingSubscription">
+        INSERT INTO `booking_subscriptions` (`_id`, `bookingId`, `openId`, `templateId`, `subscribed`, `notifyStatus`, `retryCount`)
+        VALUES (#{id}, #{bookingId}, #{openId}, #{templateId}, #{subscribed}, #{notifyStatus}, #{retryCount})
+        ON DUPLICATE KEY UPDATE
+          `subscribed` = VALUES(`subscribed`),
+          `notifyStatus` = CASE WHEN `notifyStatus` = 'sent' THEN `notifyStatus` ELSE VALUES(`notifyStatus`) END,
+          `lastError` = NULL,
+          `updatedAt` = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="listPendingNotificationCandidates" resultMap="notificationCandidateMapper">
+        SELECT s.`_id` AS `subscriptionId`,
+               s.`bookingId`,
+               s.`openId`,
+               s.`templateId`,
+               b.`roomName`,
+               b.`date`,
+               b.`startTime`,
+               b.`endTime`,
+               b.`title`,
+               b.`organizerName`
+        FROM `booking_subscriptions` s
+        INNER JOIN `bookings` b ON b.`_id` = s.`bookingId`
+        WHERE s.`subscribed` = 1
+          AND s.`notifyStatus` = 'pending'
+          AND b.`status` = 'pending'
+          AND CONCAT(b.`date`, ' ', b.`startTime`) &gt;= CONCAT(#{startDate}, ' ', #{startTime})
+          AND CONCAT(b.`date`, ' ', b.`startTime`) &lt; CONCAT(#{endDate}, ' ', #{endTime})
+        ORDER BY b.`date` ASC, b.`startTime` ASC, s.`createdAt` ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="markSubscriptionSending">
+        UPDATE `booking_subscriptions`
+        SET `notifyStatus` = 'sending', `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id} AND `notifyStatus` = 'pending'
+    </update>
+
+    <update id="markSubscriptionSent">
+        UPDATE `booking_subscriptions`
+        SET `notifyStatus` = 'sent', `sentAt` = CURRENT_TIMESTAMP, `lastError` = NULL, `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id}
+    </update>
+
+    <update id="markSubscriptionFailed">
+        UPDATE `booking_subscriptions`
+        SET `notifyStatus` = 'failed',
+            `lastError` = #{lastError},
+            `retryCount` = `retryCount` + 1,
+            `updatedAt` = CURRENT_TIMESTAMP
+        WHERE `_id` = #{id}
+    </update>
 
 </mapper>
