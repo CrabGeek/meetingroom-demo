@@ -123,10 +123,12 @@ public class BookingNotificationScheduler {
 
   private Map<String, Object> buildTemplateData(NotificationCandidate candidate) {
     Map<String, Object> data = new HashMap<>();
+    String meetingTime = candidate.getDate() + " " + candidate.getStartTime();
     data.put("thing1", valueNode(truncate(candidate.getTitle(), 20)));
-    data.put("thing2", valueNode(truncate(candidate.getRoomName(), 20)));
-    data.put("time3", valueNode(candidate.getDate() + " " + candidate.getStartTime()));
-    data.put("thing4", valueNode("会议将在15分钟后开始"));
+    data.put("date2", valueNode(meetingTime));
+    data.put("thing5", valueNode(truncate(candidate.getTitle(), 20)));
+    data.put("thing10", valueNode(truncate(candidate.getRoomName(), 20)));
+    data.put("thing15", valueNode(truncate(candidate.getOrganizerName(), 20)));
     return data;
   }
 
