@@ -489,16 +489,16 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   }
 
   private String resolveOpenId(CheckUserRequest request) {
-    if (!isBlank(request.getOpenId())) {
-      logger.info("auth.resolve-openid source=request_openId openId={}", maskOpenId(request.getOpenId()));
-      return request.getOpenId().trim();
-    }
-    if (isBlank(request.getCode())) {
-      throw new ApiException(ApiErrorCode.UNAUTHORIZED, "code 不能为空");
-    }
     if (isBlank(wxAppId) || isBlank(wxAppSecret)) {
       logger.info("auth.resolve-openid source=dev_open_id wxConfigPresent=false devOpenId={}", maskOpenId(wxDevOpenId));
       return wxDevOpenId.trim();
+    }
+    if (isBlank(request.getCode())) {
+      logger.warn("auth.resolve-openid rejected reason=missing_code wxConfigPresent=true clientOpenId={}", maskOpenId(request.getOpenId()));
+      throw new ApiException(ApiErrorCode.UNAUTHORIZED, "code 不能为空");
+    }
+    if (!isBlank(request.getOpenId())) {
+      logger.warn("auth.resolve-openid ignored clientOpenId={} because wxConfigPresent=true", maskOpenId(request.getOpenId()));
     }
     try {
       logger.info("auth.resolve-openid source=wechat_api wxConfigPresent=true");

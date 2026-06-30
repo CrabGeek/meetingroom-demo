@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tencent.wxcloudrun.config.ApiErrorCode;
 import com.tencent.wxcloudrun.dao.MeetingRoomMapper;
 import com.tencent.wxcloudrun.dto.AttendeeRequest;
+import com.tencent.wxcloudrun.dto.CheckUserRequest;
 import com.tencent.wxcloudrun.dto.CreateBookingRequest;
 import com.tencent.wxcloudrun.model.Booking;
 import com.tencent.wxcloudrun.model.Room;
 import com.tencent.wxcloudrun.model.User;
 import com.tencent.wxcloudrun.service.impl.MeetingRoomServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -28,6 +30,34 @@ class MeetingRoomServiceImplTest {
 
   private final MeetingRoomMapper mapper = mock(MeetingRoomMapper.class);
   private final MeetingRoomService service = new MeetingRoomServiceImpl(mapper, new ObjectMapper());
+
+  @Test
+  void checkUserUsesStableDevOpenIdWhenWechatConfigIsMissing() {
+    ReflectionTestUtils.setField(service, "wxDevOpenId", "local_dev_openid");
+    User user = user("u_001", "local_dev_openid", "张明", "万事网联");
+    when(mapper.findUserByOpenId("local_dev_openid")).thenReturn(user);
+
+    CheckUserRequest request = new CheckUserRequest();
+    request.setCode("temporary_login_code");
+    request.setOpenId("client_supplied_openid");
+
+    Map<String, Object> data = service.checkUser(request);
+
+    assertEquals("local_dev_openid", data.get("openId"));
+    assertEquals(true, data.get("registered"));
+  }
+
+  @Test
+  void checkUserRejectsClientOpenIdWithoutCodeWhenWechatConfigExists() {
+    ReflectionTestUtils.setField(service, "wxAppId", "wx_test_app_id");
+    ReflectionTestUtils.setField(service, "wxAppSecret", "wx_test_secret");
+
+    CheckUserRequest request = new CheckUserRequest();
+    request.setOpenId("client_supplied_openid");
+
+    ApiException exception = assertThrows(ApiException.class, () -> service.checkUser(request));
+    assertEquals(ApiErrorCode.UNAUTHORIZED, exception.getCode());
+  }
 
   @Test
   void createBookingRejectsOverlappingPendingBooking() {
