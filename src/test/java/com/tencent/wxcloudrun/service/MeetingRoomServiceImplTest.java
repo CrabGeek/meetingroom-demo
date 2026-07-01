@@ -76,7 +76,7 @@ class MeetingRoomServiceImplTest {
     request.setCompany("万事网联");
     request.setEmail("zhangming@example.com");
 
-    User savedUser = user("u_001", "openid_001", "张明", "万事网联");
+    User savedUser = user("u_001", "openid_001", "张 明", "万事网联");
     savedUser.setFirstName("明");
     savedUser.setLastName("张");
     savedUser.setEmail("zhangming@example.com");
@@ -90,10 +90,40 @@ class MeetingRoomServiceImplTest {
     verify(mapper).insertUser(userCaptor.capture());
     assertEquals("明", userCaptor.getValue().getFirstName());
     assertEquals("张", userCaptor.getValue().getLastName());
-    assertEquals("张明", userCaptor.getValue().getName());
+    assertEquals("张 明", userCaptor.getValue().getName());
     assertEquals("明", user.get("firstName"));
     assertEquals("张", user.get("lastName"));
-    assertEquals("张明", user.get("name"));
+    assertEquals("张 明", user.get("name"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void createBookingReturnsOrganizerName() {
+    User organizer = user("u_001", "openid_001", "张 明", "万事网联");
+    Room room = room("201", "启航 A");
+    Booking savedBooking = booking("b_001", "201", "2026-07-01", "10:00", "11:00", "需求梳理", "万事网联");
+    savedBooking.setOrganizerName("张 明");
+
+    when(mapper.findUserByOpenId("openid_001")).thenReturn(organizer);
+    when(mapper.findRoomById("201")).thenReturn(room);
+    when(mapper.lockBookingsByRoomAndDate("201", "2026-07-01")).thenReturn(Arrays.asList());
+    when(mapper.findUserById("u_001")).thenReturn(organizer);
+    when(mapper.findBookingById(anyString())).thenReturn(savedBooking);
+
+    CreateBookingRequest request = new CreateBookingRequest();
+    request.setRoomId("201");
+    request.setOrganizerOpenId("openid_001");
+    request.setDate("2026-07-01");
+    request.setStartTime("10:00");
+    request.setEndTime("11:00");
+    request.setTitle("需求梳理");
+    request.setAttendees(Arrays.asList(attendee("u_001", "张 明", "万事网联")));
+
+    Map<String, Object> data = service.createBooking(request);
+    Map<String, Object> booking = (Map<String, Object>) data.get("booking");
+
+    assertEquals("b_001", booking.get("id"));
+    assertEquals("张 明", booking.get("organizerName"));
   }
 
   @Test
@@ -298,8 +328,14 @@ class MeetingRoomServiceImplTest {
     User user = new User();
     user.setId(id);
     user.setOpenId(openId);
-    user.setFirstName(name.length() > 1 ? name.substring(1) : name);
-    user.setLastName(name.length() > 1 ? name.substring(0, 1) : "");
+    if (name.contains(" ")) {
+      String[] nameParts = name.split(" ", 2);
+      user.setLastName(nameParts[0]);
+      user.setFirstName(nameParts[1]);
+    } else {
+      user.setFirstName(name.length() > 1 ? name.substring(1) : name);
+      user.setLastName(name.length() > 1 ? name.substring(0, 1) : "");
+    }
     user.setName(name);
     user.setCompany(company);
     user.setEmail("test@example.com");

@@ -63,6 +63,12 @@ WHERE `firstName` = ''
   AND `lastName` = ''
   AND CHAR_LENGTH(`name`) > 1;
 
+UPDATE `users`
+SET `name` = CONCAT(`lastName`, ' ', `firstName`)
+WHERE `firstName` != ''
+  AND `lastName` != ''
+  AND `name` != CONCAT(`lastName`, ' ', `firstName`);
+
 CREATE TABLE IF NOT EXISTS `invite_codes` (
   `_id` varchar(64) NOT NULL,
   `code` varchar(6) NOT NULL,
