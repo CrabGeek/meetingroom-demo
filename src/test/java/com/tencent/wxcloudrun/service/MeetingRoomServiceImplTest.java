@@ -7,6 +7,7 @@ import com.tencent.wxcloudrun.dto.AttendeeRequest;
 import com.tencent.wxcloudrun.dto.CheckUserRequest;
 import com.tencent.wxcloudrun.dto.CreateBookingRequest;
 import com.tencent.wxcloudrun.dto.RegisterRequest;
+import com.tencent.wxcloudrun.dto.RescheduleBookingRequest;
 import com.tencent.wxcloudrun.dto.SubscribeBookingRequest;
 import com.tencent.wxcloudrun.model.Booking;
 import com.tencent.wxcloudrun.model.BookingSubscription;
@@ -196,6 +197,50 @@ class MeetingRoomServiceImplTest {
 
     ApiException exception = assertThrows(ApiException.class, () -> service.createBooking(request));
     assertEquals(ApiErrorCode.VALIDATION_ERROR, exception.getCode());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void rescheduleBookingUpdatesFullBookingAndExcludesCurrentBookingConflict() {
+    User organizer = user("u_001", "openid_001", "明 张", "万事网联");
+    User attendeeUser = user("u_003", "openid_003", "华 张", "万事网联");
+    Room room = room("201", "启航 A");
+    Booking existingBooking = booking("b_001", "201", "2026-07-01", "10:00", "11:00", "旧会议", "万事网联");
+    existingBooking.setOrganizerOpenId("openid_001");
+    existingBooking.setOrganizerName("明 张");
+    Booking savedBooking = booking("b_001", "201", "2026-07-01", "10:00", "11:00", "新会议", "万事网联");
+    savedBooking.setOrganizerOpenId("openid_001");
+    savedBooking.setOrganizerName("明 张");
+    savedBooking.setAttendees("[{\"userId\":\"u_001\",\"name\":\"明 张\",\"company\":\"万事网联\"},{\"userId\":\"u_003\",\"name\":\"华 张\",\"company\":\"万事网联\"}]");
+
+    when(mapper.findUserByOpenId("openid_001")).thenReturn(organizer);
+    when(mapper.findRoomById("201")).thenReturn(room);
+    when(mapper.findBookingById("b_001")).thenReturn(existingBooking, savedBooking);
+    when(mapper.lockBookingsByRoomAndDate("201", "2026-07-01")).thenReturn(Arrays.asList(existingBooking));
+    when(mapper.findUserById("u_003")).thenReturn(attendeeUser);
+
+    RescheduleBookingRequest request = new RescheduleBookingRequest();
+    request.setOpenId("openid_001");
+    request.setOrganizerOpenId("openid_001");
+    request.setRoomId("201");
+    request.setDate("2026-07-01");
+    request.setStartTime("10:00");
+    request.setEndTime("11:00");
+    request.setTitle("新会议");
+    request.setAttendees(Arrays.asList(attendee("u_003", "华 张", "万事网联")));
+
+    Map<String, Object> data = service.rescheduleBooking("b_001", request);
+    Map<String, Object> booking = (Map<String, Object>) data.get("booking");
+
+    ArgumentCaptor<Booking> bookingCaptor = ArgumentCaptor.forClass(Booking.class);
+    verify(mapper).updateBookingSchedule(bookingCaptor.capture());
+    assertEquals("b_001", bookingCaptor.getValue().getId());
+    assertEquals("新会议", bookingCaptor.getValue().getTitle());
+    assertEquals("明 张", bookingCaptor.getValue().getOrganizerName());
+    assertEquals(true, bookingCaptor.getValue().getAttendees().contains("华 张"));
+    assertEquals("b_001", booking.get("id"));
+    assertEquals("新会议", booking.get("title"));
+    assertEquals("明 张", booking.get("organizerName"));
   }
 
   @Test

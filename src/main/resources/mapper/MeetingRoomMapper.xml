@@ -232,6 +232,12 @@
             `date` = #{date},
             `startTime` = #{startTime},
             `endTime` = #{endTime},
+            `title` = #{title},
+            `organizerOpenId` = #{organizerOpenId},
+            `organizerUserId` = #{organizerUserId},
+            `organizerName` = #{organizerName},
+            `organizerCompany` = #{organizerCompany},
+            `attendees` = #{attendees},
             `updatedAt` = CURRENT_TIMESTAMP
         WHERE `_id` = #{id}
     </update>

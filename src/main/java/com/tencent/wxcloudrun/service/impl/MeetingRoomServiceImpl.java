@@ -464,22 +464,30 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   @Transactional(isolation = Isolation.SERIALIZABLE)
   public Map<String, Object> rescheduleBooking(String bookingId, RescheduleBookingRequest request) {
-    logger.info("bookings.reschedule start bookingId={} openId={} roomId={} date={} startTime={} endTime={}",
-        bookingId, request == null ? "-" : maskOpenId(request.getOpenId()), request == null ? null : request.getRoomId(),
-        request == null ? null : request.getDate(), request == null ? null : request.getStartTime(), request == null ? null : request.getEndTime());
-    if (request == null || isBlank(request.getOpenId()) || isBlank(request.getRoomId()) || isBlank(request.getDate())
-        || isBlank(request.getStartTime()) || isBlank(request.getEndTime())) {
+    logger.info("bookings.reschedule start bookingId={} openId={} organizerOpenId={} roomId={} date={} startTime={} endTime={} attendeeCount={}",
+        bookingId, request == null ? "-" : maskOpenId(request.getOpenId()), request == null ? "-" : maskOpenId(request.getOrganizerOpenId()),
+        request == null ? null : request.getRoomId(), request == null ? null : request.getDate(), request == null ? null : request.getStartTime(),
+        request == null ? null : request.getEndTime(), request == null || request.getAttendees() == null ? null : request.getAttendees().size());
+    if (request == null || isBlank(request.getOpenId()) || isBlank(request.getOrganizerOpenId()) || isBlank(request.getRoomId()) || isBlank(request.getDate())
+        || isBlank(request.getStartTime()) || isBlank(request.getEndTime()) || isBlank(request.getTitle())
+        || request.getAttendees() == null || request.getAttendees().isEmpty()) {
       logger.warn("bookings.reschedule rejected reason=missing_param bookingId={}", bookingId);
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "改期参数不完整");
     }
-    requireUser(request.getOpenId());
+    User actor = requireUser(request.getOpenId());
+    User organizer = requireUser(request.getOrganizerOpenId());
+    if (!actor.getOpenId().equals(organizer.getOpenId())) {
+      logger.warn("bookings.reschedule rejected reason=actor_organizer_mismatch bookingId={} openId={} organizerOpenId={}", bookingId, maskOpenId(request.getOpenId()), maskOpenId(request.getOrganizerOpenId()));
+      throw new ApiException(ApiErrorCode.PERMISSION_DENIED, "无权限改期该预约");
+    }
     Booking booking = meetingRoomMapper.findBookingById(bookingId);
     if (booking == null) {
       logger.warn("bookings.reschedule rejected reason=booking_not_found bookingId={} openId={}", bookingId, maskOpenId(request.getOpenId()));
       throw new ApiException(ApiErrorCode.BOOKING_NOT_FOUND, "预约记录不存在");
     }
-    if (!request.getOpenId().equals(booking.getOrganizerOpenId())) {
-      logger.warn("bookings.reschedule rejected reason=permission_denied bookingId={} openId={} organizerOpenId={}", bookingId, maskOpenId(request.getOpenId()), maskOpenId(booking.getOrganizerOpenId()));
+    if (!request.getOpenId().equals(booking.getOrganizerOpenId()) || !request.getOrganizerOpenId().equals(booking.getOrganizerOpenId())) {
+      logger.warn("bookings.reschedule rejected reason=permission_denied bookingId={} openId={} organizerOpenId={} existingOrganizerOpenId={}",
+          bookingId, maskOpenId(request.getOpenId()), maskOpenId(request.getOrganizerOpenId()), maskOpenId(booking.getOrganizerOpenId()));
       throw new ApiException(ApiErrorCode.PERMISSION_DENIED, "无权限改期该预约");
     }
     if (!STATUS_PENDING.equals(booking.getStatus())) {
@@ -505,13 +513,22 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       throw bookingConflict(conflict.getId());
     }
 
+    List<Map<String, Object>> attendees = normalizeAttendees(request.getAttendees(), organizer);
+    validateRoomCapacity(room, attendees.size());
+
     booking.setRoomId(room.getId());
     booking.setRoomName(room.getName());
     booking.setDate(request.getDate());
     booking.setStartTime(request.getStartTime());
     booking.setEndTime(request.getEndTime());
+    booking.setTitle(request.getTitle().trim());
+    booking.setOrganizerOpenId(organizer.getOpenId());
+    booking.setOrganizerUserId(organizer.getId());
+    booking.setOrganizerName(organizer.getName());
+    booking.setOrganizerCompany(organizer.getCompany());
+    booking.setAttendees(toJson(attendees));
     meetingRoomMapper.updateBookingSchedule(booking);
-    logger.info("bookings.reschedule done bookingId={} roomId={} date={} startTime={} endTime={}", bookingId, request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime());
+    logger.info("bookings.reschedule done bookingId={} roomId={} date={} startTime={} endTime={} attendeeCount={}", bookingId, request.getRoomId(), request.getDate(), request.getStartTime(), request.getEndTime(), attendees.size());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("booking", bookingToSummaryMap(meetingRoomMapper.findBookingById(bookingId)));
