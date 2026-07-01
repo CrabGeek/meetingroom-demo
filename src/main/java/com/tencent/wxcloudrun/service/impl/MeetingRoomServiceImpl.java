@@ -129,7 +129,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     validateRegisterRequest(request);
     String firstName = request.getFirstName().trim();
     String lastName = request.getLastName().trim();
-    String displayName = lastName + " " + firstName;
+    String displayName = firstName + " " + lastName;
     logger.info("users.register start openId={} company={} hasInviteId={}", maskOpenId(request.getOpenId()), request.getCompany(), !isBlank(request.getInviteId()));
     InviteCode inviteCode = null;
     if (!isBlank(request.getInviteId())) {
@@ -596,7 +596,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
     String firstName = request.getFirstName().trim();
     String lastName = request.getLastName().trim();
-    String name = lastName + " " + firstName;
+    String name = firstName + " " + lastName;
     if (firstName.length() > 30 || lastName.length() > 30) {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "名和姓长度需为 1-30 个字符");
     }
@@ -807,6 +807,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       item.put("titleVisible", titleVisible);
       item.put("title", titleVisible ? booking.getTitle() : "");
       item.put("displayTitle", titleVisible ? booking.getTitle() : DISPLAY_OCCUPIED);
+      item.put("organizerName", booking.getOrganizerName());
       item.put("organizerDisplayName", booking.getOrganizerName());
       item.put("organizerCompany", booking.getOrganizerCompany());
       result.add(item);

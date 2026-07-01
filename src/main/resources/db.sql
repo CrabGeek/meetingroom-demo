@@ -64,10 +64,10 @@ WHERE `firstName` = ''
   AND CHAR_LENGTH(`name`) > 1;
 
 UPDATE `users`
-SET `name` = CONCAT(`lastName`, ' ', `firstName`)
+SET `name` = CONCAT(`firstName`, ' ', `lastName`)
 WHERE `firstName` != ''
   AND `lastName` != ''
-  AND `name` != CONCAT(`lastName`, ' ', `firstName`);
+  AND `name` != CONCAT(`firstName`, ' ', `lastName`);
 
 CREATE TABLE IF NOT EXISTS `invite_codes` (
   `_id` varchar(64) NOT NULL,
