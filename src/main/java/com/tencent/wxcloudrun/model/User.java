@@ -8,9 +8,10 @@ import java.time.LocalDateTime;
 public class User {
   private String id;
   private String openId;
+  private String firstName;
+  private String lastName;
   private String name;
   private String company;
-  private String phone;
   private String email;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;

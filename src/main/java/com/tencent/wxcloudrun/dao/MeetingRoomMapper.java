@@ -18,7 +18,7 @@ public interface MeetingRoomMapper {
 
   User findUserById(@Param("id") String id);
 
-  List<User> searchUsers(@Param("keyword") String keyword, @Param("limit") Integer limit);
+  List<User> searchUsers(@Param("keyword") String keyword, @Param("company") String company, @Param("limit") Integer limit);
 
   void insertUser(User user);
 

@@ -5,9 +5,10 @@
     <resultMap id="userMapper" type="com.tencent.wxcloudrun.model.User">
         <id property="id" column="_id"/>
         <result property="openId" column="openId"/>
+        <result property="firstName" column="firstName"/>
+        <result property="lastName" column="lastName"/>
         <result property="name" column="name"/>
         <result property="company" column="company"/>
-        <result property="phone" column="phone"/>
         <result property="email" column="email"/>
         <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
         <result property="updatedAt" column="updatedAt" javaType="java.time.LocalDateTime"/>
@@ -26,6 +27,7 @@
     <resultMap id="roomMapper" type="com.tencent.wxcloudrun.model.Room">
         <id property="id" column="_id"/>
         <result property="name" column="name"/>
+        <result property="roomCapacity" column="roomCapacity"/>
         <result property="enabled" column="enabled"/>
         <result property="sortOrder" column="sortOrder"/>
         <result property="createdAt" column="createdAt" javaType="java.time.LocalDateTime"/>
@@ -64,37 +66,39 @@
     </resultMap>
 
     <select id="findUserByOpenId" resultMap="userMapper">
-        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        SELECT `_id`, `openId`, `firstName`, `lastName`, `name`, `company`, `email`, `createdAt`, `updatedAt`
         FROM `users`
         WHERE `openId` = #{openId}
         LIMIT 1
     </select>
 
     <select id="findUserById" resultMap="userMapper">
-        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        SELECT `_id`, `openId`, `firstName`, `lastName`, `name`, `company`, `email`, `createdAt`, `updatedAt`
         FROM `users`
         WHERE `_id` = #{id}
         LIMIT 1
     </select>
 
     <select id="searchUsers" resultMap="userMapper">
-        SELECT `_id`, `openId`, `name`, `company`, `phone`, `email`, `createdAt`, `updatedAt`
+        SELECT `_id`, `openId`, `firstName`, `lastName`, `name`, `company`, `email`, `createdAt`, `updatedAt`
         FROM `users`
-        WHERE `name` LIKE CONCAT('%', #{keyword}, '%')
+        WHERE `company` = #{company}
+          AND `name` LIKE CONCAT('%', #{keyword}, '%')
         ORDER BY `name` ASC, `createdAt` ASC
         LIMIT #{limit}
     </select>
 
     <insert id="insertUser" parameterType="com.tencent.wxcloudrun.model.User">
-        INSERT INTO `users` (`_id`, `openId`, `name`, `company`, `phone`, `email`)
-        VALUES (#{id}, #{openId}, #{name}, #{company}, #{phone}, #{email})
+        INSERT INTO `users` (`_id`, `openId`, `firstName`, `lastName`, `name`, `company`, `email`)
+        VALUES (#{id}, #{openId}, #{firstName}, #{lastName}, #{name}, #{company}, #{email})
     </insert>
 
     <update id="updateUser" parameterType="com.tencent.wxcloudrun.model.User">
         UPDATE `users`
-        SET `name` = #{name},
+        SET `firstName` = #{firstName},
+            `lastName` = #{lastName},
+            `name` = #{name},
             `company` = #{company},
-            `phone` = #{phone},
             `email` = #{email},
             `updatedAt` = CURRENT_TIMESTAMP
         WHERE `_id` = #{id}
@@ -121,14 +125,14 @@
     </update>
 
     <select id="findRoomById" resultMap="roomMapper">
-        SELECT `_id`, `name`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
+        SELECT `_id`, `name`, `roomCapacity`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
         FROM `rooms`
         WHERE `_id` = #{id} AND `enabled` = 1
         LIMIT 1
     </select>
 
     <select id="listEnabledRooms" resultMap="roomMapper">
-        SELECT `_id`, `name`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
+        SELECT `_id`, `name`, `roomCapacity`, `enabled`, `sortOrder`, `createdAt`, `updatedAt`
         FROM `rooms`
         WHERE `enabled` = 1
         ORDER BY `sortOrder` ASC, `_id` ASC

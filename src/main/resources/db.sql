@@ -1,9 +1,10 @@
 CREATE TABLE IF NOT EXISTS `users` (
   `_id` varchar(64) NOT NULL,
   `openId` varchar(128) NOT NULL,
+  `firstName` varchar(30) NOT NULL,
+  `lastName` varchar(30) NOT NULL,
   `name` varchar(30) NOT NULL,
   `company` varchar(30) NOT NULL,
-  `phone` varchar(20) NOT NULL,
   `email` varchar(128) NOT NULL,
   `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -12,6 +13,55 @@ CREATE TABLE IF NOT EXISTS `users` (
   KEY `idx_users_name` (`name`),
   KEY `idx_users_company` (`company`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET @drop_users_phone_sql = (
+  SELECT IF(COUNT(*) = 1,
+    'ALTER TABLE `users` DROP COLUMN `phone`',
+    'SELECT 1'
+  )
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'phone'
+);
+PREPARE drop_users_phone_stmt FROM @drop_users_phone_sql;
+EXECUTE drop_users_phone_stmt;
+DEALLOCATE PREPARE drop_users_phone_stmt;
+
+SET @add_users_first_name_sql = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `users` ADD COLUMN `firstName` varchar(30) NOT NULL DEFAULT '''' AFTER `openId`',
+    'SELECT 1'
+  )
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'firstName'
+);
+PREPARE add_users_first_name_stmt FROM @add_users_first_name_sql;
+EXECUTE add_users_first_name_stmt;
+DEALLOCATE PREPARE add_users_first_name_stmt;
+
+SET @add_users_last_name_sql = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `users` ADD COLUMN `lastName` varchar(30) NOT NULL DEFAULT '''' AFTER `firstName`',
+    'SELECT 1'
+  )
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'users'
+    AND COLUMN_NAME = 'lastName'
+);
+PREPARE add_users_last_name_stmt FROM @add_users_last_name_sql;
+EXECUTE add_users_last_name_stmt;
+DEALLOCATE PREPARE add_users_last_name_stmt;
+
+UPDATE `users`
+SET `lastName` = SUBSTRING(`name`, 1, 1),
+    `firstName` = SUBSTRING(`name`, 2)
+WHERE `firstName` = ''
+  AND `lastName` = ''
+  AND CHAR_LENGTH(`name`) > 1;
 
 CREATE TABLE IF NOT EXISTS `invite_codes` (
   `_id` varchar(64) NOT NULL,
@@ -30,6 +80,7 @@ CREATE TABLE IF NOT EXISTS `invite_codes` (
 CREATE TABLE IF NOT EXISTS `rooms` (
   `_id` varchar(64) NOT NULL,
   `name` varchar(64) NOT NULL,
+  `roomCapacity` int(11) NOT NULL DEFAULT 0,
   `enabled` tinyint(1) NOT NULL DEFAULT 1,
   `sortOrder` int(11) NOT NULL DEFAULT 0,
   `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,6 +88,20 @@ CREATE TABLE IF NOT EXISTS `rooms` (
   PRIMARY KEY (`_id`),
   KEY `idx_rooms_enabled_sortOrder` (`enabled`, `sortOrder`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET @add_room_capacity_sql = (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE `rooms` ADD COLUMN `roomCapacity` int(11) NOT NULL DEFAULT 0 AFTER `name`',
+    'SELECT 1'
+  )
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'rooms'
+    AND COLUMN_NAME = 'roomCapacity'
+);
+PREPARE add_room_capacity_stmt FROM @add_room_capacity_sql;
+EXECUTE add_room_capacity_stmt;
+DEALLOCATE PREPARE add_room_capacity_stmt;
 
 CREATE TABLE IF NOT EXISTS `bookings` (
   `_id` varchar(64) NOT NULL,
@@ -85,17 +150,16 @@ ON DUPLICATE KEY UPDATE
   `enabled` = VALUES(`enabled`),
   `companyScope` = VALUES(`companyScope`);
 
-DELETE FROM `rooms`
-WHERE `name` IN ('启航 A', '启航 B', '协作 C', '远航 D');
 
-INSERT INTO `rooms` (`_id`, `name`, `enabled`, `sortOrder`)
+INSERT INTO `rooms` (`_id`, `name`, `roomCapacity`, `enabled`, `sortOrder`)
 VALUES
-  ('201', '19F-HangZhou Room', 1, 10),
-  ('202', '19F-GuangZhou Room', 1, 20),
-  ('203', '19F-TianJin Room', 1, 30),
-  ('204', '19F-Training Room', 1, 40)
+  ('201', '19F-HangZhou Room', 6, 1, 10),
+  ('202', '19F-GuangZhou Room', 6, 1, 20),
+  ('203', '19F-TianJin Room', 8, 1, 30),
+  ('204', '19F-Training Room', 20, 1, 40)
 ON DUPLICATE KEY UPDATE
   `name` = VALUES(`name`),
+  `roomCapacity` = VALUES(`roomCapacity`),
   `enabled` = VALUES(`enabled`),
   `sortOrder` = VALUES(`sortOrder`);
 

@@ -51,7 +51,6 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
   private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
   private static final Pattern INVITE_CODE_PATTERN = Pattern.compile("^\\d{6}$");
-  private static final Pattern PHONE_PATTERN = Pattern.compile("^1\\d{10}$");
   private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
   private static final String COMPANY_A = "万事网联";
   private static final String COMPANY_B = "万事达卡";
@@ -128,6 +127,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Transactional
   public Map<String, Object> registerUser(RegisterRequest request) {
     validateRegisterRequest(request);
+    String firstName = request.getFirstName().trim();
+    String lastName = request.getLastName().trim();
+    String displayName = lastName + firstName;
     logger.info("users.register start openId={} company={} hasInviteId={}", maskOpenId(request.getOpenId()), request.getCompany(), !isBlank(request.getInviteId()));
     InviteCode inviteCode = null;
     if (!isBlank(request.getInviteId())) {
@@ -148,16 +150,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       user = new User();
       user.setId(newId("u"));
       user.setOpenId(request.getOpenId());
-      user.setName(request.getName().trim());
+      user.setFirstName(firstName);
+      user.setLastName(lastName);
+      user.setName(displayName);
       user.setCompany(request.getCompany());
-      user.setPhone(request.getPhone().trim());
       user.setEmail(request.getEmail().trim());
       meetingRoomMapper.insertUser(user);
       logger.info("users.register inserted openId={} userId={} company={}", maskOpenId(user.getOpenId()), user.getId(), user.getCompany());
     } else {
-      user.setName(request.getName().trim());
+      user.setFirstName(firstName);
+      user.setLastName(lastName);
+      user.setName(displayName);
       user.setCompany(request.getCompany());
-      user.setPhone(request.getPhone().trim());
       user.setEmail(request.getEmail().trim());
       meetingRoomMapper.updateUser(user);
       logger.info("users.register updated openId={} userId={} company={}", maskOpenId(user.getOpenId()), user.getId(), user.getCompany());
@@ -313,6 +317,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     Map<String, Object> roomData = new LinkedHashMap<>();
     roomData.put("id", room.getId());
     roomData.put("name", room.getName());
+    roomData.put("roomCapacity", room.getRoomCapacity());
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("room", roomData);
@@ -324,7 +329,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   @Override
   public Map<String, Object> searchUsers(String keyword, String viewerOpenId, Integer limit) {
     logger.info("users.search start viewerOpenId={} hasKeyword={} limit={}", maskOpenId(viewerOpenId), !isBlank(keyword), limit);
-    requireUser(viewerOpenId);
+    User viewer = requireUser(viewerOpenId);
     if (isBlank(keyword)) {
       Map<String, Object> data = new LinkedHashMap<>();
       data.put("users", new ArrayList<Map<String, Object>>());
@@ -333,10 +338,12 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
     int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));
     List<Map<String, Object>> users = new ArrayList<>();
-    for (User user : meetingRoomMapper.searchUsers(keyword.trim(), safeLimit)) {
+    for (User user : meetingRoomMapper.searchUsers(keyword.trim(), viewer.getCompany(), safeLimit)) {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("id", user.getId());
       item.put("openId", user.getOpenId());
+      item.put("firstName", user.getFirstName());
+      item.put("lastName", user.getLastName());
       item.put("name", user.getName());
       item.put("company", user.getCompany());
       item.put("email", user.getEmail());
@@ -374,6 +381,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     }
 
     List<Map<String, Object>> attendees = normalizeAttendees(request.getAttendees(), organizer);
+  validateRoomCapacity(room, attendees.size());
     Booking booking = new Booking();
     booking.setId(newId("b"));
     booking.setRoomId(room.getId());
@@ -402,14 +410,15 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   public Map<String, Object> getMyBookings(String openId, String status, Boolean includeAttendee) {
     logger.info("bookings.my start openId={} status={} includeAttendee={}", maskOpenId(openId), status, includeAttendee);
     User currentUser = requireUser(openId);
-    String queryStatus = isBlank(status) ? STATUS_PENDING : status;
+    String queryStatus = STATUS_PENDING;
+    boolean shouldIncludeAttendee = includeAttendee == null || Boolean.TRUE.equals(includeAttendee);
     List<Map<String, Object>> bookings = new ArrayList<>();
     Set<String> bookingIds = new HashSet<>();
     for (Booking booking : meetingRoomMapper.listMyBookings(openId, queryStatus)) {
       bookings.add(bookingToListMap(booking, "organizer", true));
       bookingIds.add(booking.getId());
     }
-    if (Boolean.TRUE.equals(includeAttendee)) {
+    if (shouldIncludeAttendee) {
       for (Booking booking : meetingRoomMapper.listAttendeeBookings(currentUser.getId(), queryStatus)) {
         if (bookingIds.contains(booking.getId()) || !isAttendee(booking, currentUser.getId())) {
           continue;
@@ -581,19 +590,21 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   }
 
   private void validateRegisterRequest(RegisterRequest request) {
-    if (request == null || isBlank(request.getOpenId()) || isBlank(request.getName()) || isBlank(request.getCompany())
-        || isBlank(request.getPhone()) || isBlank(request.getEmail())) {
+    if (request == null || isBlank(request.getOpenId()) || isBlank(request.getFirstName()) || isBlank(request.getLastName()) || isBlank(request.getCompany())
+        || isBlank(request.getEmail())) {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "注册信息不完整");
     }
-    String name = request.getName().trim();
+    String firstName = request.getFirstName().trim();
+    String lastName = request.getLastName().trim();
+    String name = lastName + firstName;
+    if (firstName.length() > 30 || lastName.length() > 30) {
+      throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "名和姓长度需为 1-30 个字符");
+    }
     if (name.length() < 2 || name.length() > 30) {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "姓名长度需为 2-30 个字符");
     }
     if (!COMPANY_A.equals(request.getCompany()) && !COMPANY_B.equals(request.getCompany())) {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "公司不合法");
-    }
-    if (!PHONE_PATTERN.matcher(request.getPhone().trim()).matches()) {
-      throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "手机号格式不正确");
     }
     if (!EMAIL_PATTERN.matcher(request.getEmail().trim()).matches()) {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "邮箱格式不正确");
@@ -661,6 +672,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     Map<String, Object> item = new LinkedHashMap<>();
     item.put("id", room.getId());
     item.put("name", room.getName());
+    item.put("roomCapacity", room.getRoomCapacity());
     item.put("status", busy ? "busy" : "available");
     item.put("statusText", busy ? "使用中" : "可预订");
     item.put("nextInfo", busy ? "使用中至 " + activeBooking.getEndTime() : "现在可立即预定");
@@ -686,6 +698,13 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     return null;
   }
 
+  private void validateRoomCapacity(Room room, int attendeeCount) {
+    Integer roomCapacity = room.getRoomCapacity();
+    if (roomCapacity != null && roomCapacity > 0 && attendeeCount > roomCapacity) {
+      throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "参会人数不能超过会议室容量");
+    }
+  }
+
   private List<Map<String, Object>> normalizeAttendees(List<AttendeeRequest> requestAttendees, User organizer) {
     List<Map<String, Object>> attendees = new ArrayList<>();
     Set<String> userIds = new HashSet<>();
@@ -697,6 +716,9 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       User user = meetingRoomMapper.findUserById(attendee.getUserId());
       if (user == null) {
         throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "参会人员不存在");
+      }
+      if (!organizer.getCompany().equals(user.getCompany())) {
+        throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "参会人员必须与预约人属于同一家公司");
       }
       if (!userIds.add(user.getId())) {
         continue;
@@ -785,6 +807,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       item.put("titleVisible", titleVisible);
       item.put("title", titleVisible ? booking.getTitle() : "");
       item.put("displayTitle", titleVisible ? booking.getTitle() : DISPLAY_OCCUPIED);
+      item.put("organizerDisplayName", booking.getOrganizerName());
       item.put("organizerCompany", booking.getOrganizerCompany());
       result.add(item);
     }
@@ -807,9 +830,10 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     if (includeOpenId) {
       data.put("openId", user.getOpenId());
     }
+    data.put("firstName", user.getFirstName());
+    data.put("lastName", user.getLastName());
     data.put("name", user.getName());
     data.put("company", user.getCompany());
-    data.put("phone", user.getPhone());
     data.put("email", user.getEmail());
     if (user.getCreatedAt() != null) {
       data.put("createdAt", user.getCreatedAt().toString());
@@ -837,6 +861,7 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
     data.put("startTime", booking.getStartTime());
     data.put("endTime", booking.getEndTime());
     data.put("status", booking.getStatus());
+    data.put("attendees", parseAttendeeList(booking));
     if (userRole != null) {
       data.put("userRole", userRole);
     }
@@ -844,6 +869,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       data.put("canManage", canManage);
     }
     return data;
+  }
+
+  private List<Map<String, Object>> parseAttendeeList(Booking booking) {
+    if (booking == null || isBlank(booking.getAttendees())) {
+      return new ArrayList<>();
+    }
+    try {
+      return objectMapper.readValue(booking.getAttendees(), new TypeReference<List<Map<String, Object>>>() {});
+    } catch (Exception ex) {
+      logger.warn("bookings.attendees parse_failed bookingId={} message={}", booking.getId(), ex.getMessage());
+      return new ArrayList<>();
+    }
   }
 
   private void sortBookingMaps(List<Map<String, Object>> bookings) {

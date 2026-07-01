@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public class Room {
   private String id;
   private String name;
+  private Integer roomCapacity;
   private Boolean enabled;
   private Integer sortOrder;
   private LocalDateTime createdAt;
