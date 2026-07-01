@@ -293,11 +293,6 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
       throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "days 当前仅支持 1 到 5 天");
     }
     LocalDate firstDate = parseDate(startDate);
-    LocalDate today = LocalDate.now(currentZoneId());
-    if (firstDate.isAfter(today.plusDays(14))) {
-      logger.warn("rooms.calendar rejected reason=date_out_of_range roomId={} startDate={}", roomId, startDate);
-      throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "日历最多查看当前日期起两周内数据");
-    }
     LocalDate endDate = firstDate.plusDays(dayCount - 1L);
     List<Booking> bookings = meetingRoomMapper.listBookingsByRoomAndDateRange(roomId, firstDate.format(DATE_FORMATTER), endDate.format(DATE_FORMATTER));
     Map<String, List<Booking>> bookingsByDate = groupBookingsByDate(bookings);

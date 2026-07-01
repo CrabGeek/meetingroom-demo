@@ -371,6 +371,24 @@ class MeetingRoomServiceImplTest {
     assertEquals("", bookings.get(1).get("title"));
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  void roomCalendarAllowsDatesBeyondTwoWeeks() {
+    String futureDate = LocalDate.now().plusDays(30).format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+    User viewer = user("u_001", "openid_001", "张明", "万事网联");
+    Room room = room("201", "启航 A");
+
+    when(mapper.findRoomById("201")).thenReturn(room);
+    when(mapper.findUserByOpenId("openid_001")).thenReturn(viewer);
+    when(mapper.listBookingsByRoomAndDateRange(anyString(), anyString(), anyString())).thenReturn(Arrays.asList());
+
+    Map<String, Object> data = service.getRoomCalendar("201", futureDate, 1, "openid_001");
+    List<Map<String, Object>> days = (List<Map<String, Object>>) data.get("days");
+
+    assertEquals(1, days.size());
+    assertEquals(futureDate, days.get(0).get("date"));
+  }
+
   private User user(String id, String openId, String name, String company) {
     User user = new User();
     user.setId(id);
