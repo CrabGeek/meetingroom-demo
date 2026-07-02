@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -58,9 +59,12 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   private static final String STATUS_CANCELLED = "cancelled";
   private static final String NOTIFY_STATUS_PENDING = "pending";
   private static final String DISPLAY_OCCUPIED = "已占用";
+  private static final LocalTime BOOKING_OPEN_TIME = LocalTime.of(9, 0);
+  private static final LocalTime BOOKING_CLOSE_TIME = LocalTime.of(18, 0);
 
   private final MeetingRoomMapper meetingRoomMapper;
   private final ObjectMapper objectMapper;
+  private Clock clock = Clock.systemDefaultZone();
 
   @Value("${wx.app-id:}")
   private String wxAppId;
@@ -246,31 +250,41 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   public Map<String, Object> getRoomStatus(String date) {
     logger.info("rooms.status start date={}", date);
     ZoneId currentZone = currentZoneId();
-    String statusDate = isBlank(date) ? LocalDate.now(currentZone).format(DATE_FORMATTER) : parseDate(date).format(DATE_FORMATTER);
-    String now = LocalTime.now(currentZone).format(TIME_FORMATTER);
+    Clock currentClock = currentClock(currentZone);
+    LocalTime currentTime = LocalTime.now(currentClock);
+    String statusDate = isBlank(date) ? LocalDate.now(currentClock).format(DATE_FORMATTER) : parseDate(date).format(DATE_FORMATTER);
+    String now = currentTime.format(TIME_FORMATTER);
+    boolean openForBooking = isOpenForBooking(currentTime);
     Map<String, Booking> activeBookings = activeBookingMap(statusDate, now);
 
     int availableCount = 0;
     int busyCount = 0;
+    int unavailableCount = 0;
     List<Map<String, Object>> rooms = new ArrayList<>();
     for (Room room : meetingRoomMapper.listEnabledRooms()) {
       Booking activeBooking = activeBookings.get(room.getId());
-      if (activeBooking == null) {
+      boolean busy = activeBooking != null;
+      boolean available = !busy && openForBooking;
+      boolean unavailable = !busy && !openForBooking;
+      if (available) {
         availableCount++;
-      } else {
+      } else if (busy) {
         busyCount++;
+      } else {
+        unavailableCount++;
       }
-      rooms.add(roomStatusMap(room, activeBooking, activeBooking == null));
+      rooms.add(roomStatusMap(room, activeBooking, available, unavailable));
     }
 
     Map<String, Object> summary = new LinkedHashMap<>();
     summary.put("available", availableCount);
     summary.put("busy", busyCount);
+    summary.put("unavailable", unavailableCount);
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("summary", summary);
     data.put("rooms", rooms);
-    logger.info("rooms.status done date={} available={} busy={} returnedRooms={}", statusDate, availableCount, busyCount, rooms.size());
+    logger.info("rooms.status done date={} available={} busy={} unavailable={} returnedRooms={}", statusDate, availableCount, busyCount, unavailableCount, rooms.size());
     return data;
   }
 
@@ -680,14 +694,18 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
   }
 
   private Map<String, Object> roomStatusMap(Room room, Booking activeBooking, boolean available) {
+    return roomStatusMap(room, activeBooking, available, false);
+  }
+
+  private Map<String, Object> roomStatusMap(Room room, Booking activeBooking, boolean available, boolean unavailable) {
     boolean busy = activeBooking != null;
     Map<String, Object> item = new LinkedHashMap<>();
     item.put("id", room.getId());
     item.put("name", room.getName());
     item.put("roomCapacity", room.getRoomCapacity());
-    item.put("status", busy ? "busy" : "available");
-    item.put("statusText", busy ? "使用中" : "可预订");
-    item.put("nextInfo", busy ? "使用中至 " + activeBooking.getEndTime() : "现在可立即预定");
+    item.put("status", busy ? "busy" : (unavailable ? "unavailable" : "available"));
+    item.put("statusText", busy ? "使用中" : (unavailable ? "非开放时间" : "可预订"));
+    item.put("nextInfo", busy ? "使用中至 " + activeBooking.getEndTime() : (unavailable ? "开放时间 09:00-18:00" : "现在可立即预定"));
     item.put("available", available);
     return item;
   }
@@ -947,6 +965,14 @@ public class MeetingRoomServiceImpl implements MeetingRoomService {
 
   private ZoneId currentZoneId() {
     return ZoneId.of(isBlank(zoneId) ? "Asia/Shanghai" : zoneId);
+  }
+
+  private Clock currentClock(ZoneId zoneId) {
+    return clock.withZone(zoneId);
+  }
+
+  private boolean isOpenForBooking(LocalTime time) {
+    return !time.isBefore(BOOKING_OPEN_TIME) && time.isBefore(BOOKING_CLOSE_TIME);
   }
 
   private String maskOpenId(String openId) {

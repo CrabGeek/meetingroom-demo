@@ -18,7 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
@@ -262,6 +265,7 @@ class MeetingRoomServiceImplTest {
   @SuppressWarnings("unchecked")
   void roomStatusIncludesRoomCapacity() {
     Room room = room("201", "启航 A");
+    fixCurrentTime("2026-07-02T10:00:00+08:00");
     when(mapper.listActiveBookingsByDateTime(anyString(), anyString())).thenReturn(Arrays.asList());
     when(mapper.listEnabledRooms()).thenReturn(Arrays.asList(room));
 
@@ -271,6 +275,64 @@ class MeetingRoomServiceImplTest {
     assertEquals(1, rooms.size());
     assertEquals("201", rooms.get(0).get("id"));
     assertEquals(6, rooms.get(0).get("roomCapacity"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void roomStatusReturnsUnavailableAfterBookingHours() {
+    Room room = room("201", "启航 A");
+    fixCurrentTime("2026-07-02T18:00:00+08:00");
+    when(mapper.listActiveBookingsByDateTime(anyString(), anyString())).thenReturn(Arrays.asList());
+    when(mapper.listEnabledRooms()).thenReturn(Arrays.asList(room));
+
+    Map<String, Object> data = service.getRoomStatus(null);
+    Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+    List<Map<String, Object>> rooms = (List<Map<String, Object>>) data.get("rooms");
+
+    assertEquals(0, summary.get("available"));
+    assertEquals(0, summary.get("busy"));
+    assertEquals(1, summary.get("unavailable"));
+    assertEquals("unavailable", rooms.get(0).get("status"));
+    assertEquals("非开放时间", rooms.get(0).get("statusText"));
+    assertEquals(false, rooms.get(0).get("available"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void roomStatusReturnsUnavailableBeforeBookingHours() {
+    Room room = room("201", "启航 A");
+    fixCurrentTime("2026-07-02T08:59:00+08:00");
+    when(mapper.listActiveBookingsByDateTime(anyString(), anyString())).thenReturn(Arrays.asList());
+    when(mapper.listEnabledRooms()).thenReturn(Arrays.asList(room));
+
+    Map<String, Object> data = service.getRoomStatus(null);
+    Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+    List<Map<String, Object>> rooms = (List<Map<String, Object>>) data.get("rooms");
+
+    assertEquals(0, summary.get("available"));
+    assertEquals(1, summary.get("unavailable"));
+    assertEquals("unavailable", rooms.get(0).get("status"));
+    assertEquals("非开放时间", rooms.get(0).get("statusText"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void roomStatusKeepsBusyDuringNonBookingHours() {
+    Room room = room("201", "启航 A");
+    Booking activeBooking = booking("b_001", "201", "2026-07-02", "17:30", "18:30", "跨时段会议", "万事网联");
+    fixCurrentTime("2026-07-02T18:00:00+08:00");
+    when(mapper.listActiveBookingsByDateTime(anyString(), anyString())).thenReturn(Arrays.asList(activeBooking));
+    when(mapper.listEnabledRooms()).thenReturn(Arrays.asList(room));
+
+    Map<String, Object> data = service.getRoomStatus(null);
+    Map<String, Object> summary = (Map<String, Object>) data.get("summary");
+    List<Map<String, Object>> rooms = (List<Map<String, Object>>) data.get("rooms");
+
+    assertEquals(0, summary.get("available"));
+    assertEquals(1, summary.get("busy"));
+    assertEquals(0, summary.get("unavailable"));
+    assertEquals("busy", rooms.get(0).get("status"));
+    assertEquals("使用中", rooms.get(0).get("statusText"));
   }
 
   @Test
@@ -431,6 +493,11 @@ class MeetingRoomServiceImplTest {
     booking.setOrganizerCompany(company);
     booking.setStatus("pending");
     return booking;
+  }
+
+  private void fixCurrentTime(String dateTime) {
+    ReflectionTestUtils.setField(service, "zoneId", "Asia/Shanghai");
+    ReflectionTestUtils.setField(service, "clock", Clock.fixed(OffsetDateTime.parse(dateTime).toInstant(), ZoneId.of("Asia/Shanghai")));
   }
 
   private AttendeeRequest attendee(String userId, String name, String company) {
